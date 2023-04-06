@@ -1,0 +1,39 @@
+name: Build
+
+on: [push, pull_request]
+
+jobs:
+  build_wheels:
+    name: Build wheels on ${{ matrix.os }}
+    strategy:
+      matrix:
+        #os: [ubuntu-20.04, windows-2019, macOS-11]
+        os: [ubuntu-20.04]
+        #python-version: ["3.8", "3.9", "3.10", "3.11"]
+        python-version: ["3.10"]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Get CMake
+        uses: lukka/get-cmake@latest
+
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Install Procure
+        run: python -m pip install procure
+
+      - name: Run Procure
+        run: procure
+
+      - name: Install cxbuild
+        run: python -m pip install .
+
+      - name: Build wheels
+        run: cxbuild
