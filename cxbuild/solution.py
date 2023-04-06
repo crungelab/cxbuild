@@ -33,8 +33,10 @@ class Solution(ProjectBase):
 
     def create_config(self):
         prefix_dirs = []
-        print('site.getsitepackages', site.getsitepackages())
-        prefix_dirs += Path(site.getsitepackages()[1]).as_posix() #TODO: Is this consistent on all platforms?
+        site_packages = site.getsitepackages()
+        print('site_packages', site_packages)
+        for site_package in site_packages:
+            prefix_dirs += Path(site_package).as_posix() #TODO: this is returning a string.  Convert to posix
 
         if hasattr(self.pyproject.tool.cxbuild, 'plugins'):
             plugins = self.pyproject.tool.cxbuild.plugins
