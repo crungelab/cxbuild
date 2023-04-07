@@ -39,6 +39,10 @@ class CMakeConfig:
             msg = f"build directory {self.build_dir} must be a (creatable) directory"
             raise CMakeConfigError(msg)
 
+def join_posix_paths(paths: list[Path]):
+    posix_paths = ";".join(str(path.as_posix()) for path in paths)
+    print(posix_paths)
+    return posix_paths
 
 class CMakeTool(Tool):
     def __init__(self, config: CMakeConfig) -> None:
@@ -60,11 +64,15 @@ class CMakeTool(Tool):
         # CMake configure arguments
         cmake_install_prefix = Path.cwd() / '_cxinstall'
 
+        #cmake_prefix_path = ';'.join(self.config.prefix_dirs)
+        cmake_prefix_path = join_posix_paths(self.config.prefix_dirs)
+        print('cmake_prefix_path: ', cmake_prefix_path)
+
         configure_args += [
             f"-DCMAKE_BUILD_TYPE={self.config.build_type}",
             f"-DCMAKE_INSTALL_PREFIX:PATH={cmake_install_prefix}",
             #f"-DCMAKE_MODULE_PATH:PATH={cmake_module_path}",
-            f"-DCMAKE_PREFIX_PATH:PATH={';'.join(self.config.prefix_dirs)}",
+            f"-DCMAKE_PREFIX_PATH:PATH={cmake_prefix_path}",
         ]
 
         command = [
