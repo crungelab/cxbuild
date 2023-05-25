@@ -8,6 +8,8 @@ from .cmake_tool import CMakeConfig, CMakeTool
 from .project_base import ProjectBase
 from .project import Project
 
+def is_glob(s):
+    return any(char in s for char in '*?[]')
 
 class Solution(ProjectBase):
     def __init__(self, path: Path) -> None:
@@ -23,7 +25,10 @@ class Solution(ProjectBase):
         print(project_globs)
         project_paths = []
         for glob in project_globs:
-            project_paths += list(self.path.glob(glob))
+            if is_glob(glob):
+                project_paths += list(self.path.glob(glob))
+            else:
+                project_paths.append(self.path / glob)
         print(project_paths)
         for project_path in project_paths:
             self.add_project(Project(project_path))

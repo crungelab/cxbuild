@@ -13,6 +13,7 @@ class CxBuild:
 
     def develop(self):
         print('develop')
+        self.configure()
         self.solution.develop()
 
     def build(self):
