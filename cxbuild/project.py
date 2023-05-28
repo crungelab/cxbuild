@@ -1,4 +1,5 @@
 from pathlib import Path
+import shutil
 
 from .project_base import ProjectBase
 from .setup_tool import SetupConfig, SetupTool
@@ -12,6 +13,10 @@ class Project(ProjectBase):
         tool.develop()
 
     def build(self, env):
+        dist_path = self.path / 'dist'
+        if dist_path.exists():
+            shutil.rmtree(dist_path)
+
         tool = SetupTool(SetupConfig(env=env, source_dir=self.path))
         tool.build()
 

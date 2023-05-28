@@ -41,7 +41,6 @@ class Solution(ProjectBase):
         site_packages = site.getsitepackages()
         print('site_packages', site_packages)
         for site_package in site_packages:
-            #prefix_dirs += Path(site_package).as_posix()
             prefix_dirs.append(Path(site_package))
 
         if hasattr(self.pyproject.tool.cxbuild, 'plugins'):
@@ -50,13 +49,11 @@ class Solution(ProjectBase):
             for plugin in plugins:
                 plugin_module = importlib.import_module(plugin)
                 print('plugin_module: ', plugin_module)
-                #plugin_prefix = Path(plugin_module.__file__).parent.parent.as_posix()
                 plugin_prefix = Path(plugin_module.__file__).parent.parent
                 print('plugin_prefix: ', plugin_prefix)
                 prefix_dirs.append(plugin_prefix)
                 
         print('prefix_dirs: ', prefix_dirs)
-        #exit()
         config = CMakeConfig(source_dir=Path('.'), build_dir=Path('_cxbuild'), build_type='Release', generator=None, prefix_dirs=prefix_dirs)
         return config
     
@@ -91,14 +88,6 @@ class Solution(ProjectBase):
         env["CX_INSTALL_DIR"] = str(self.path / '_cxinstall')
 
         for project in self.projects:
-            """
-            cxbuild_path = self.path / 'pkg' / 'cxbuild'
-            requirements = [
-                #str(cxbuild_path.resolve()),
-                str(cxbuild_path),
-            ]
-            project.write_requirements(requirements)
-            """
             project.build(env)
 
     def install(self):
