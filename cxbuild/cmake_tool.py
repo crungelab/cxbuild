@@ -4,7 +4,6 @@ import dataclasses
 import sys, os
 import shutil
 from pathlib import Path
-import site
 
 from .tool import Tool
 
@@ -62,9 +61,8 @@ class CMakeTool(Tool):
                 configure_args += [f"-DCMAKE_MAKE_PROGRAM={shutil.which('ninja')}"]
 
         # CMake configure arguments
-        cmake_install_prefix = Path.cwd() / '_cxinstall'
+        cmake_install_prefix = Path.cwd() / '_cxbuild/artifacts'
 
-        #cmake_prefix_path = ';'.join(self.config.prefix_dirs)
         cmake_prefix_path = join_posix_paths(self.config.prefix_dirs)
         print('cmake_prefix_path: ', cmake_prefix_path)
 

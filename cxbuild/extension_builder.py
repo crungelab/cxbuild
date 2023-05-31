@@ -27,14 +27,5 @@ class ExtensionBuilder(build_ext):
 
     def build_extension(self, ext: CMakeExtension) -> None:
         ext_path = self.get_ext_fullpath(ext.name)
-        print('ext_path: ', ext_path)
         ext_dir = Path(ext_path).parent.absolute()
-        print('ext_dir: ', ext_dir)
-
-        CX_INSTALL_DIR = Path(os.environ.get('CX_INSTALL_DIR'))
-        print('CX_INSTALL_DIR: ', CX_INSTALL_DIR)
-        install_from = CX_INSTALL_DIR / ext.install_from
-        print('install_from: ', install_from)
-        install_to = ext_dir
-        print('install_to: ', install_to)
-        copy_directory_contents(install_from, install_to)
+        ext.build(ext_path, ext_dir)

@@ -2,6 +2,18 @@ from pathlib import Path
 
 from .solution import Solution
 
+import socket
+from loguru import logger
+
+HOST, PORT = 'localhost', 5005
+
+sock = socket.socket(socket.AF_INET, # Internet
+                     socket.SOCK_DGRAM) # UDP
+
+def logudp(message: str):
+    sock.sendto(bytes(message, 'utf-8'), (HOST, PORT))
+
+logger.add(logudp)
 
 class CxBuild:
     def __init__(self) -> None:

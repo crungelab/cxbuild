@@ -10,7 +10,7 @@ setuptools.setup(
         CMakeExtension(
             name="cxb_simple._core",
             source_dir=Path.cwd(),
-            install_from=Path('cxb_simple'),
+            install_prefix=Path('cxb_simple'),
         ),
     ],
     cmdclass=dict(

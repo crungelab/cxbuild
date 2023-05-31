@@ -5,6 +5,7 @@ from pathlib import Path
 
 from .cmake_tool import CMakeConfig, CMakeTool
 
+from .activity import BuildActivity, DevelopActivity
 from .project_base import ProjectBase
 from .project import Project
 
@@ -54,7 +55,7 @@ class Solution(ProjectBase):
                 prefix_dirs.append(plugin_prefix)
                 
         print('prefix_dirs: ', prefix_dirs)
-        config = CMakeConfig(source_dir=Path('.'), build_dir=Path('_cxbuild'), build_type='Release', generator=None, prefix_dirs=prefix_dirs)
+        config = CMakeConfig(source_dir=Path('.'), build_dir=Path('_cxbuild/build'), build_type='Release', generator=None, prefix_dirs=prefix_dirs)
         return config
     
     def configure(self):
@@ -70,11 +71,11 @@ class Solution(ProjectBase):
         tool.build()
         tool.install()
 
-        env = os.environ.copy()
-        env["CX_INSTALL_DIR"] = str(self.path / '_cxinstall')
+        activity = DevelopActivity()
+        activity.commit()
 
         for project in self.projects:
-            project.develop(env)
+            project.develop(activity.make_environ())
 
     def build(self):
         print('build')
@@ -82,13 +83,12 @@ class Solution(ProjectBase):
         tool = CMakeTool(config)
         tool.build()
         tool.install()
-        
-        env = os.environ.copy()
-        env["ROOT_DIR"] = str(self.path)
-        env["CX_INSTALL_DIR"] = str(self.path / '_cxinstall')
+
+        activity = BuildActivity()
+        activity.commit()
 
         for project in self.projects:
-            project.build(env)
+            project.build(activity.make_environ())
 
     def install(self):
         print('install')

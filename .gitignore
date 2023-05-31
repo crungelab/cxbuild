@@ -76,7 +76,6 @@ docs/_build/
 
 # CxBuild
 _cxbuild
-_cxinstall
 
 depot
 tmp
