@@ -58,7 +58,7 @@ def build_editable(
     logger.debug(f"wheel_directory: {wheel_directory}")
     # If not invoked indirectly by cxbuild itself do the default action
     if not os.environ.get('CBX_ACTIVITY'):
-        return build_meta.build_wheel(wheel_directory, config_settings, metadata_directory)
+        return build_meta.build_editable(wheel_directory, config_settings, metadata_directory)
     return build_wheel(wheel_directory, config_settings, metadata_directory)
 
 
