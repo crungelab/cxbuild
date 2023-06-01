@@ -24,19 +24,24 @@ class Activity(pydantic.BaseModel):
     path: Path = Path.cwd() / "_cxbuild/activity.json"
     mode: BuildMode = BuildMode.RELEASE
 
+    def __new__(cls, *args, **kwargs):
+        global _activity
+        if not _activity:
+            _activity = super(Activity, cls).__new__(cls)
+        return _activity
+
     @property
     def artifacts_dir(self):
         return self.root / "_cxbuild/artifacts"
 
-    def commit(self):
+    # Note:  I'm tempted to serialize to the environment itself instead of a file ...
+    def save(self):
+        os.environ["CBX_ACTIVITY"] = str(self.path)
         """Serialize an activity to a JSON string"""
         with open(self.path, "w") as f:
             json.dump({"type": self.type.value, "object": self.json()}, f)
 
-    def make_environ(self):
-        os.environ["CBX_ACTIVITY"] = str(self.path)
-        environ = os.environ.copy()
-        return environ
+_activity: Activity = None
 
 
 class BuildActivity(Activity):
@@ -60,14 +65,9 @@ def deserialize_activity(path: Path):
         raise ValueError("Invalid type")
 
 
-_activity: Activity = None
-
-
 def get_activity() -> Activity:
     global _activity
     if _activity:
         return _activity
     path = Path(os.environ["CBX_ACTIVITY"])
-    activity = deserialize_activity(path)
-    _activity = activity
-    return activity
+    return deserialize_activity(path)

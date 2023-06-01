@@ -71,11 +71,10 @@ class Solution(ProjectBase):
         tool.build()
         tool.install()
 
-        activity = DevelopActivity()
-        activity.commit()
+        DevelopActivity().save()
 
         for project in self.projects:
-            project.develop(activity.make_environ())
+            project.develop()
 
     def build(self):
         print('build')
@@ -84,11 +83,10 @@ class Solution(ProjectBase):
         tool.build()
         tool.install()
 
-        activity = BuildActivity()
-        activity.commit()
+        BuildActivity().save()
 
         for project in self.projects:
-            project.build(activity.make_environ())
+            project.build()
 
     def install(self):
         print('install')

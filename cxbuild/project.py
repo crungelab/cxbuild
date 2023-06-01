@@ -18,12 +18,12 @@ class Project(ProjectBase):
     def __init__(self, path: Path) -> None:
         super().__init__(path)
 
-    def develop(self, env):
-        tool = PipTool(PipConfig(env=env, source_dir=self.path))
+    def develop(self):
+        tool = PipTool(PipConfig(env=os.environ, source_dir=self.path))
         tool.install()
 
-    def build(self, env):
-        tool = BuildTool(BuildConfig(env=env, source_dir=self.path))
+    def build(self):
+        tool = BuildTool(BuildConfig(env=os.environ, source_dir=self.path))
         tool.build()
 
     def build_wheel(
