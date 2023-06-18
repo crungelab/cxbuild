@@ -7,21 +7,22 @@ import json
 import pydantic
 
 
-class BuildMode(Enum):
-    DEBUG = 1
-    RELEASE = 2
-    PROFILE = 3
+class BuildMode(str, Enum):
+    DEBUG = 'DEBUG'
+    RELEASE = 'RELEASE'
+    PROFILE = 'PROFILE'
 
 
 class ActivityType(str, Enum):
-    BuildActivity = "BuildActivity"
-    DevelopActivity = "DevelopActivity"
+    ConfigureActivity = 'ConfigureActivity'
+    BuildActivity = 'BuildActivity'
+    DevelopActivity = 'DevelopActivity'
 
 
 class Activity(pydantic.BaseModel):
     type: ActivityType = None
     root: Path = Path.cwd()
-    path: Path = Path.cwd() / "_cxbuild/activity.json"
+    path: Path = Path.cwd() / '_cxbuild/activity.json'
     mode: BuildMode = BuildMode.RELEASE
 
     def __new__(cls, *args, **kwargs):
@@ -32,16 +33,20 @@ class Activity(pydantic.BaseModel):
 
     @property
     def artifacts_dir(self):
-        return self.root / "_cxbuild/artifacts"
+        return self.root / '_cxbuild/artifacts'
 
     # Note:  I'm tempted to serialize to the environment itself instead of a file ...
     def save(self):
-        os.environ["CBX_ACTIVITY"] = str(self.path)
+        os.environ['CBX_ACTIVITY'] = str(self.path)
         """Serialize an activity to a JSON string"""
-        with open(self.path, "w") as f:
-            json.dump({"type": self.type.value, "object": self.json()}, f)
+        with open(self.path, 'w') as f:
+            json.dump({'type': self.type.value, 'object': self.json()}, f)
 
 _activity: Activity = None
+
+
+class ConfigureActivity(Activity):
+    type: ActivityType = ActivityType.ConfigureActivity
 
 
 class BuildActivity(Activity):
@@ -57,7 +62,9 @@ def deserialize_activity(path: Path):
     with open(path, "r") as f:
         data = json.load(f)
 
-    if data["type"] == ActivityType.BuildActivity.value:
+    if data["type"] == ActivityType.ConfigureActivity.value:
+        return ConfigureActivity.parse_raw(data["object"])
+    elif data["type"] == ActivityType.BuildActivity.value:
         return BuildActivity.parse_raw(data["object"])
     elif data["type"] == ActivityType.DevelopActivity.value:
         return DevelopActivity.parse_raw(data["object"])

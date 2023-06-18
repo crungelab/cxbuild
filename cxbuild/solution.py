@@ -1,11 +1,12 @@
-import os
 import site
 import importlib
 from pathlib import Path
 
+from loguru import logger
+
 from .cmake_tool import CMakeConfig, CMakeTool
 
-from .activity import BuildActivity, DevelopActivity
+from .activity import get_activity, BuildMode, ConfigureActivity, BuildActivity, DevelopActivity
 from .project_base import ProjectBase
 from .project import Project
 
@@ -55,35 +56,41 @@ class Solution(ProjectBase):
                 prefix_dirs.append(plugin_prefix)
                 
         print('prefix_dirs: ', prefix_dirs)
-        config = CMakeConfig(source_dir=Path('.'), build_dir=Path('_cxbuild/build'), build_type='Release', generator=None, prefix_dirs=prefix_dirs)
+        build_type = 'Release'
+        activity = get_activity()
+        if activity.mode == BuildMode.DEBUG:
+            build_type = 'Debug'
+        logger.info(f'Configuring in {build_type} mode')
+        config = CMakeConfig(source_dir=Path('.'), build_dir=Path('_cxbuild/build'), build_type=build_type, generator=None, prefix_dirs=prefix_dirs)
         return config
     
     def configure(self):
         print('configure')
+        ConfigureActivity().save()
         config = self.create_config()
         tool = CMakeTool(config)
         tool.configure()
 
     def develop(self):
         print('develop')
+        DevelopActivity().save()
+        
         config = self.create_config()
         tool = CMakeTool(config)
         tool.build()
         tool.install()
-
-        DevelopActivity().save()
 
         for project in self.projects:
             project.develop()
 
     def build(self):
         print('build')
+        BuildActivity().save()
+
         config = self.create_config()
         tool = CMakeTool(config)
         tool.build()
         tool.install()
-
-        BuildActivity().save()
 
         for project in self.projects:
             project.build()
