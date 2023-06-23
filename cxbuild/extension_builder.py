@@ -5,7 +5,6 @@ from pathlib import Path
 from setuptools.command.build_ext import build_ext
 
 from .cmake_extension import CMakeExtension
-from .copyutils import copy_directory_contents
 
 class ExtensionBuilder(build_ext):
 

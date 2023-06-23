@@ -14,6 +14,7 @@ def logudp(message: str):
     sock.sendto(bytes(message, 'utf-8'), (HOST, PORT))
 
 logger.add(logudp)
+#logger.add("cxbuild_{time}.log")
 
 class CxBuild:
     def __init__(self) -> None:

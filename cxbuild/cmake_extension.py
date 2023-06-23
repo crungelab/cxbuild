@@ -29,4 +29,6 @@ class CMakeExtension(Extension):
         logger.debug(f'install_to: {install_to}')
         copy_directory_contents(install_from, install_to)
         if self.editable:
-            copy_directory_contents(install_from, self.source_dir / self.install_prefix)
+            install_editable_to = self.source_dir / self.install_prefix
+            logger.debug(f'install_editable_to: {install_editable_to}')
+            copy_directory_contents(install_from, install_editable_to)

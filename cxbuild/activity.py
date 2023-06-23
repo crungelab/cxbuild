@@ -27,8 +27,7 @@ class Activity(pydantic.BaseModel):
 
     def __new__(cls, *args, **kwargs):
         global _activity
-        if not _activity:
-            _activity = super(Activity, cls).__new__(cls)
+        _activity = super(Activity, cls).__new__(cls)
         return _activity
 
     @property
@@ -55,6 +54,7 @@ class BuildActivity(Activity):
 
 class DevelopActivity(Activity):
     type: ActivityType = ActivityType.DevelopActivity
+    mode: BuildMode = BuildMode.DEBUG
 
 
 def deserialize_activity(path: Path):

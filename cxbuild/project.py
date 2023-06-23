@@ -19,6 +19,7 @@ class Project(ProjectBase):
         super().__init__(path)
 
     def develop(self):
+        logger.debug('develop')
         tool = PipTool(PipConfig(env=os.environ, source_dir=self.path))
         tool.install()
 

@@ -29,7 +29,7 @@ class BuildTool(Tool):
         cwd = self.config.source_dir
         env = self.config.env
         try:
-            result = subprocess.run(cmd, cwd=cwd, env=env, shell=True, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            result = subprocess.run(cmd, cwd=cwd, env=env, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             print("Command executed successfully. Output:\n", result.stdout)
         except subprocess.CalledProcessError as e:
             print(f"Command execution failed with error code {e.returncode}. Error message:\n", e.stderr)

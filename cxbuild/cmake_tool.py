@@ -67,10 +67,10 @@ class CMakeTool(Tool):
         print('cmake_prefix_path: ', cmake_prefix_path)
 
         configure_args += [
-            f"-DCMAKE_BUILD_TYPE={self.config.build_type}",
-            f"-DCMAKE_INSTALL_PREFIX:PATH={cmake_install_prefix}",
+            f'-DCMAKE_BUILD_TYPE={self.config.build_type}',
+            f'-DCMAKE_INSTALL_PREFIX:PATH={cmake_install_prefix}',
             #f"-DCMAKE_MODULE_PATH:PATH={cmake_module_path}",
-            f"-DCMAKE_PREFIX_PATH:PATH={cmake_prefix_path}",
+            f'-DCMAKE_PREFIX_PATH:PATH={cmake_prefix_path}',
         ]
 
         command = [
