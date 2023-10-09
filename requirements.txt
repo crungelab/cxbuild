@@ -1,3 +1,1 @@
 -e ../procure
--e ../crunge-clang
--e ../cxbuild

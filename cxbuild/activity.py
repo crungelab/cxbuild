@@ -17,6 +17,7 @@ class ActivityType(str, Enum):
     ConfigureActivity = 'ConfigureActivity'
     BuildActivity = 'BuildActivity'
     DevelopActivity = 'DevelopActivity'
+    InstallActivity = 'InstallActivity'
 
 
 class Activity(pydantic.BaseModel):
@@ -40,6 +41,7 @@ class Activity(pydantic.BaseModel):
         """Serialize an activity to a JSON string"""
         with open(self.path, 'w') as f:
             json.dump({'type': self.type.value, 'object': self.json()}, f)
+        return self
 
 _activity: Activity = None
 
@@ -51,11 +53,13 @@ class ConfigureActivity(Activity):
 class BuildActivity(Activity):
     type: ActivityType = ActivityType.BuildActivity
 
-
 class DevelopActivity(Activity):
     type: ActivityType = ActivityType.DevelopActivity
     mode: BuildMode = BuildMode.DEBUG
 
+
+class InstallActivity(Activity):
+    type: ActivityType = ActivityType.InstallActivity
 
 def deserialize_activity(path: Path):
     """Deserialize an activity from a JSON file"""

@@ -36,7 +36,10 @@ class Project(ProjectBase):
         logger.debug('build_wheel')
         name: str = self.pyproject.tool.cxbuild.extension.name
         logger.debug(name)
-        install_prefix = Path(name.split('.')[0])
+        #install_prefix = Path(name.split('.')[0])
+        split_name = name.split('.')
+        split_name.pop()
+        install_prefix = Path(*split_name)
         logger.debug(install_prefix)
         
         activity = get_activity()

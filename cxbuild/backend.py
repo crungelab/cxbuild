@@ -73,7 +73,8 @@ def get_requires_for_build_wheel(
     config_settings: Mapping[str, Any] | None = None
 ) -> list[str]:
     logger.debug("Build hook: get_requires_for_build_wheel")
-    return []
+    #return []
+    return build_meta.get_requires_for_build_wheel(config_settings)
 
 
 def get_requires_for_build_editable(self, config_settings=None):

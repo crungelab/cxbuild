@@ -1,5 +1,3 @@
-import os
-import shutil
 from pathlib import Path
 
 from setuptools.command.build_ext import build_ext
