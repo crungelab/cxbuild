@@ -73,6 +73,18 @@ class Solution(ProjectBase):
         config = CMakeConfig(source_dir=Path('.'), build_dir=Path('_cxbuild/build'), build_type=build_type, generator=None, prefix_dirs=prefix_dirs)
         return config
     
+    def clean(self):
+        logger.info('clean')
+        for project in self.projects:
+            project.clean()
+        '''
+        if activity.mode == BuildMode.DEBUG:
+            build_dir = self.path / '_cxbuild/build'
+            if build_dir.exists():
+                logger.debug(f"removing {build_dir}")
+                shutil.rmtree(build_dir)
+        '''
+
     def configure(self):
         logger.info('configure')
         activity = ConfigureActivity().save()

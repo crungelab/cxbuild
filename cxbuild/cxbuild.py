@@ -20,6 +20,10 @@ class CxBuild:
     def __init__(self) -> None:
         self.solution = Solution(Path.cwd())
 
+    def clean(self):
+        print('clean')
+        self.solution.clean()
+
     def configure(self):
         print('configure')
         self.solution.configure()

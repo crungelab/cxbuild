@@ -18,6 +18,23 @@ class Project(ProjectBase):
     def __init__(self, path: Path) -> None:
         super().__init__(path)
 
+    def clean(self):
+        logger.debug('clean')
+        dist_dir = self.path / 'dist'
+        if dist_dir.exists():
+            logger.debug(f"removing {dist_dir}")
+            shutil.rmtree(dist_dir)
+
+        build_dir = self.path / 'build'
+        if build_dir.exists():
+            logger.debug(f"removing {build_dir}")
+            shutil.rmtree(build_dir)
+
+        for egginfo_dir in self.path.rglob('*.egg-info'):
+            if egginfo_dir.is_dir():
+                logger.debug(f"removing {egginfo_dir}")
+                shutil.rmtree(egginfo_dir)
+
     def develop(self):
         logger.debug('develop')
         tool = PipTool(PipConfig(env=os.environ, source_dir=self.path))
@@ -35,21 +52,22 @@ class Project(ProjectBase):
     ) -> str:
         logger.debug('build_wheel')
         name: str = self.pyproject.tool.cxbuild.extension.name
-        logger.debug(name)
-        #install_prefix = Path(name.split('.')[0])
+        logger.debug(f'extension name: {name}')
         split_name = name.split('.')
         split_name.pop()
         install_prefix = Path(*split_name)
-        logger.debug(install_prefix)
+        logger.debug(f'install prefix{install_prefix}')
         
         activity = get_activity()
-        logger.debug(activity.__dict__)
+        logger.debug(f'activity: {activity.__dict__}')
 
         editable = True if isinstance(activity, DevelopActivity) else False
 
         dist_dir = self.path / 'dist'
+        '''
         if dist_dir.exists():
             shutil.rmtree(dist_dir)
+        '''
 
         #Note:  This is a hack, but I didn't want to call yet another subprocess
         sys.argv = ["setup.py", "bdist_wheel"]

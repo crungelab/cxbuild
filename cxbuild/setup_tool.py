@@ -1,13 +1,12 @@
 from __future__ import annotations
 
+import subprocess
 import dataclasses
-import sys, os
-import shutil
-import contextlib
 from pathlib import Path
 
+from loguru import logger
+
 from .tool import Tool
-import subprocess
 
 
 class SetupConfigError(Exception):
@@ -42,6 +41,9 @@ class SetupTool(Tool):
         cmd = ["python", "setup.py", "bdist_wheel"]
         cwd = self.config.source_dir
         env = self.config.env
+
+        logger.debug(f"cwd: {cwd}")
+        
         try:
             result = subprocess.run(cmd, cwd=cwd, env=env, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             print("Command executed successfully. Output:\n", result.stdout)
