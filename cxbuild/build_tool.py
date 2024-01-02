@@ -9,7 +9,12 @@ import subprocess
 
 class BuildConfigError(Exception):
     """
-    Something is misconfigured.
+    Build is misconfigured.
+    """
+
+class BuildError(Exception):
+    """
+    Build failed.
     """
 
 
@@ -33,3 +38,4 @@ class BuildTool(Tool):
             print("Command executed successfully. Output:\n", result.stdout)
         except subprocess.CalledProcessError as e:
             print(f"Command execution failed with error code {e.returncode}. Error message:\n", e.stderr)
+            raise BuildError("Build failed.") from e

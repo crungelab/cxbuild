@@ -28,10 +28,10 @@ class CxBuild:
         print('configure')
         self.solution.configure()
 
-    def develop(self):
+    def develop(self, project_name: str = None):
         print('develop')
         #self.configure()
-        self.solution.develop()
+        self.solution.develop(project_name)
 
     def build(self):
         print('build')

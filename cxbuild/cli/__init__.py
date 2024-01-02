@@ -1,4 +1,5 @@
 import click
+from click import Context
 
 from ..cxbuild import CxBuild
 
@@ -12,31 +13,32 @@ def cli(ctx):
 
 @cli.command()
 @click.pass_context
-def clean(ctx):
+def clean(ctx: Context):
     builder = CxBuild()
     builder.clean()
 
 @cli.command()
 @click.pass_context
-def configure(ctx):
+def configure(ctx: Context):
     builder = CxBuild()
     builder.configure()
 
 @cli.command()
 @click.pass_context
-def develop(ctx):
+@click.argument("project_name", required=False)
+def develop(ctx: Context, project_name: str):
     builder = CxBuild()
-    builder.develop()
+    builder.develop(project_name)
 
 @cli.command()
 @click.pass_context
-def build(ctx):
+def build(ctx: Context):
     builder = CxBuild()
     builder.clean()
     builder.build()
 
 @cli.command()
 @click.pass_context
-def install(ctx):
+def install(ctx: Context):
     builder = CxBuild()
     builder.install()
