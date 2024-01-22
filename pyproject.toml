@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cxbuild"
-version = "0.1.6"
+version = "0.3"
 description = 'CMake Extension Builder'
 readme = "README.md"
 requires-python = ">=3.8"
@@ -24,7 +24,7 @@ dependencies = [
     "setuptools ~=68.2.2",
     "wheel ~=0.41.2",
     "build ~=1.0.3",
-    "pydantic ~=2.4.2",
+    "pydantic ~=2.5.3",
     "click ~=8.1.7",
     "tomli ~=2.0.1",
     "loguru ~=0.7.2"
