@@ -1,5 +1,5 @@
 from pathlib import Path
-import tomli
+import tomllib
 
 class Config:
     def __init__(self, config) -> None:
@@ -17,7 +17,7 @@ class PyProject(Config):
     def load(cls, path: Path):
         path = path / 'pyproject.toml'
         with open(path, "rb") as f:
-            config = tomli.load(f)
+            config = tomllib.load(f)
             return PyProject(config)
 
     """

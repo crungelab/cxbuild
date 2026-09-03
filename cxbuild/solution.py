@@ -63,6 +63,7 @@ class Solution(ProjectBase):
             self.add_project(Project(project_path))
 
     def add_project(self, project: Project):
+        logger.debug(f"add_project: {project}")
         self.projects.append(project)
         self.project_map[project.name] = project
 

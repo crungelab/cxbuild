@@ -4,40 +4,34 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cxbuild"
-version = "0.3"
-description = 'CMake Extension Builder'
+description = "CMake Extension Builder"
 readme = "README.md"
-requires-python = ">=3.8"
-license = { file = "LICENSE" }
-keywords = []
+requires-python = ">=3.12"
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = ["cmake", "pybind11", "build", "monorepo"]
 authors = [{ name = "Kurtis Fields", email = "kurtisfields@gmail.com" }]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Programming Language :: Python",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: Implementation :: CPython",
-    "Programming Language :: Python :: Implementation :: PyPy",
 ]
+dynamic = ["version"]
 dependencies = [
-    "setuptools ~=68.2.2",
-    "wheel ~=0.41.2",
-    "build ~=1.0.3",
-    "pydantic ~=2.5.3",
-    "click ~=8.1.7",
-    "tomli ~=2.0.1",
-    "loguru ~=0.7.2"
+    "setuptools>=75",
+    "build>=1.2",
+    "pydantic>=2.9",
+    "click>=8.1",
+    "loguru>=0.7",
 ]
-
-#dynamic = ["version"]
 
 [project.optional-dependencies]
-dev = ["black ~=22.12.0"]
-test = ["pytest ~=7.2.1"]
+dev = ["black>=24"]
+test = ["pytest>=8"]
 
 [project.scripts]
-cxbuild = 'cxbuild.cli:cli'
+cxbuild = "cxbuild.cli:cli"
 
 [project.urls]
 homepage = "https://github.com/crungelab/cxbuild"
@@ -49,6 +43,7 @@ changelog = "https://github.com/crungelab/cxbuild/blob/main/CHANGELOG.md"
 path = "cxbuild/__about__.py"
 
 [tool.hatch.envs.default]
+python = "3.12"
 dependencies = ["pytest", "pytest-cov"]
 
 [tool.hatch.envs.default.scripts]
@@ -56,18 +51,10 @@ cov = "pytest --cov-report=term-missing --cov-config=pyproject.toml --cov=cxbuil
 no-cov = "cov --no-cov {args}"
 
 [tool.hatch.envs.docs]
-dependencies = [
-  "sphinx",
-  "furo",
-  "sphinxcontrib-apidoc",
-  "sphinxemoji"
-]
+dependencies = ["sphinx", "furo", "sphinxcontrib-apidoc", "sphinxemoji"]
 
 [tool.hatch.envs.docs.scripts]
 build = "sphinx-build docs docs/_build"
-
-[[tool.hatch.envs.test.matrix]]
-python = ["38", "39", "310", "311"]
 
 [tool.coverage.run]
 branch = true
@@ -75,7 +62,7 @@ parallel = true
 omit = ["cxbuild/__about__.py"]
 
 [tool.coverage.report]
-exclude_lines = ["no cov", "if __name__ ~= .__main__.:", "if TYPE_CHECKING:"]
+exclude_lines = ["no cov", "if __name__ == .__main__.:", "if TYPE_CHECKING:"]
 
 [tool.cxbuild]
 projects = ["pkg/*"]
