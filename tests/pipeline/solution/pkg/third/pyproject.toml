@@ -10,8 +10,6 @@ version = "0.0.1"
 description = "cxbuild pipeline-test fixture: a namespace-package portion"
 requires-python = ">=3.12"
 
-[tool.setuptools]
-packages = ["cxbns", "cxbns.third"]  # crunge's workaround for the setuptools backend
 
 [tool.cxbuild.extension]
 name = "cxbns.third._core"  # install prefix cxbns/third, matching the CMake install DESTINATION

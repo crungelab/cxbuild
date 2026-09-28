@@ -27,8 +27,6 @@ cxb-simple = "cxb_simple.cli:main"
 [project.urls]
 Homepage = "https://example.com/cxb_simple"
 
-[tool.setuptools]
-packages = ["cxb_simple"]
 
 [tool.cxbuild.extension]
 name = "cxb_simple._core"  # install prefix "cxb_simple", matching the CMake install DESTINATION

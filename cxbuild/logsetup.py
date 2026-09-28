@@ -27,7 +27,7 @@ def configure_logging(root: Path, *, name: str = DEFAULT_NAME, file: bool = True
     """WARNING+ to stderr, and, if `file`, everything to <root>/_cxbuild/<name>.log (overwritten).
 
     Pass file=False from entry points that should leave the log alone, such as
-    PEP 517 hooks that only delegate to setuptools and run before the build hook.
+    the light PEP 517 hooks (requirements, metadata), which run before the build hook.
     """
     handlers: list[dict] = [{"sink": sys.stderr, "level": "WARNING"}]
     path = None

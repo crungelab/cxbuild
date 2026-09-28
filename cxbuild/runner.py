@@ -18,7 +18,7 @@ The terminal gets a line per command and a warning count. On failure it
 also gets the tail of that command's output. With verbose=True, output is
 also streamed live.
 
-In-process work (setuptools.setup() in the build hooks) is recorded the same
+In-process work (writing a wheel) is recorded the same
 way with capture().
 
 Errors raise BuildStepError. Nothing here exits; that is the CLI's job.
@@ -282,7 +282,7 @@ class Runner:
 
     @contextmanager
     def capture(self, label: str, description: str = "", cwd: Path | None = None) -> Iterator[Step]:
-        """Record in-process work, such as setuptools.setup(), as a step.
+        """Record in-process work, such as writing a wheel, as a step.
 
         Python-level output (sys.stdout, sys.stderr) is captured like a
         command's. Child processes write to the real file descriptors and

@@ -1,11 +1,16 @@
 """
 PEP 517 build hooks
 
+cxbuild builds wheels from what a cxbuild command has just built with cmake: the
+CLI saves an activity and points CBX_ACTIVITY at it, then runs pip, which calls
+these hooks. Without an activity, the wheel hooks fail with a message saying to
+run cxbuild; sdists are not supported at all. setuptools is not involved.
+
 Every hook runs in a fresh process (pip, build and hatch all call hooks through
-pyproject_hooks), so every hook is a logging entry point. Hooks that only
-delegate to setuptools log WARNING+ to stderr and leave _cxbuild/ alone: they run
-before the build hook, which would overwrite their files anyway. The hooks that
-build open the log and the report.
+pyproject_hooks), so every hook is a logging entry point. The light hooks
+(requirements, metadata, sdist) log WARNING+ to stderr and leave _cxbuild/
+alone: they run before the build hook, which would overwrite their files anyway.
+The wheel hooks open the log and the report.
 
 Where the record goes:
 
@@ -25,12 +30,13 @@ import os
 from pathlib import Path
 from typing import Any, Mapping
 
-import setuptools.build_meta as build_meta
 from loguru import logger
 
 from .logsetup import configure_logging
+from .metadata import ProjectMetadata
 from .project import Project
-from .runner import DEFAULT_NAME, Runner
+from .pyproject import PyProject
+from .runner import DEFAULT_NAME, CxBuildError, Runner
 
 __all__ = [
     "_supported_features",
@@ -67,8 +73,8 @@ def _flag(settings: Mapping[str, Any] | None, key: str) -> bool:
     return value is not None and str(value).lower() in TRUE
 
 
-def _delegating() -> None:
-    """Setup for hooks that just call setuptools."""
+def _light() -> None:
+    """Setup for the hooks that write no files of their own: warnings to stderr only."""
     configure_logging(Path.cwd(), file=False)
 
 
@@ -84,6 +90,20 @@ def _build(hook: str, wheel_directory: str, config_settings: Mapping[str, Any] |
         return project.backend_wheel(Path(wheel_directory), editable=editable).name
 
 
+def _prepare_metadata(metadata_directory: str) -> str:
+    """Write <name>-<version>.dist-info with METADATA (and entry_points.txt): what pip reads
+    to resolve dependencies. Only pyproject.toml is needed; nothing is built."""
+    _light()
+    project_dir = Path.cwd()
+    metadata = ProjectMetadata.from_project(PyProject.load(project_dir).project, project_dir)
+    dist_info = Path(metadata_directory) / metadata.dist_info
+    dist_info.mkdir(parents=True, exist_ok=True)
+    (dist_info / "METADATA").write_text(metadata.render(), encoding="utf-8")
+    if (entry_points := metadata.render_entry_points()) is not None:
+        (dist_info / "entry_points.txt").write_text(entry_points, encoding="utf-8")
+    return metadata.dist_info
+
+
 def _supported_features():
     return ["build_editable"]
 
@@ -92,8 +112,10 @@ def build_sdist(
     sdist_directory: str,
     config_settings: dict[str, list[str] | str] | None = None,
 ) -> str:
-    _delegating()
-    return build_meta.build_sdist(sdist_directory, config_settings)
+    # PEP 517 requires the hook, not success. An sdist cxbuild can't build from
+    # would only give users a confusing cmake failure later.
+    _light()
+    raise CxBuildError("cxbuild builds wheels only: sdists are not supported")
 
 
 def build_wheel(
@@ -109,43 +131,36 @@ def build_editable(
     config_settings: dict[str, list[str] | str] | None = None,
     metadata_directory: str | None = None,
 ) -> str:
-    # If not invoked indirectly by cxbuild itself do the default action
-    if not _under_cxbuild():
-        _delegating()
-        return build_meta.build_editable(wheel_directory, config_settings, metadata_directory)
     return _build("build_editable", wheel_directory, config_settings, editable=True)
 
 
 def get_requires_for_build_sdist(
     config_settings: dict[str, str | list[str]] | None = None,
 ) -> list[str]:
-    _delegating()
-    return build_meta.get_requires_for_build_sdist(config_settings)
+    return []
 
 
 def get_requires_for_build_wheel(
     config_settings: Mapping[str, Any] | None = None,
 ) -> list[str]:
-    _delegating()
-    return build_meta.get_requires_for_build_wheel(config_settings)
+    return []  # nothing beyond cxbuild itself
 
 
 def get_requires_for_build_editable(
     config_settings: Mapping[str, Any] | None = None,
 ) -> list[str]:
-    return get_requires_for_build_wheel(config_settings)
+    return []
 
 
 def prepare_metadata_for_build_wheel(
     metadata_directory: str,
     config_settings: dict[str, list[str] | str] | None = None,
 ) -> str:
-    _delegating()
-    return build_meta.prepare_metadata_for_build_wheel(metadata_directory, config_settings)
+    return _prepare_metadata(metadata_directory)
 
 
 def prepare_metadata_for_build_editable(
     metadata_directory: str,
     config_settings: dict[str, list[str] | str] | None = None,
 ) -> str:
-    return prepare_metadata_for_build_wheel(metadata_directory, config_settings)
+    return _prepare_metadata(metadata_directory)
