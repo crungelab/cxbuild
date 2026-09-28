@@ -72,12 +72,7 @@ def _delegating() -> None:
     configure_logging(Path.cwd(), file=False)
 
 
-def _build(
-    hook: str,
-    wheel_directory: str,
-    config_settings: Mapping[str, Any] | None,
-    metadata_directory: str | None,
-) -> str:
+def _build(hook: str, wheel_directory: str, config_settings: Mapping[str, Any] | None, editable: bool) -> str:
     project_dir = Path.cwd()
     root, name = _record_location(project_dir)
     configure_logging(root, name=name)
@@ -86,9 +81,7 @@ def _build(
 
     with Runner(root, hook, verbose=verbose, name=name) as runner:
         project = Project(project_dir, runner)
-        wheel = project.build_wheel(wheel_directory, config_settings, metadata_directory)
-        runner.add_artifact("wheel", Path(wheel_directory) / wheel)
-        return wheel
+        return project.backend_wheel(Path(wheel_directory), editable=editable).name
 
 
 def _supported_features():
@@ -108,7 +101,7 @@ def build_wheel(
     config_settings: dict[str, list[str] | str] | None = None,
     metadata_directory: str | None = None,
 ) -> str:
-    return _build("build_wheel", wheel_directory, config_settings, metadata_directory)
+    return _build("build_wheel", wheel_directory, config_settings, editable=False)
 
 
 def build_editable(
@@ -120,7 +113,7 @@ def build_editable(
     if not _under_cxbuild():
         _delegating()
         return build_meta.build_editable(wheel_directory, config_settings, metadata_directory)
-    return _build("build_editable", wheel_directory, config_settings, metadata_directory)
+    return _build("build_editable", wheel_directory, config_settings, editable=True)
 
 
 def get_requires_for_build_sdist(

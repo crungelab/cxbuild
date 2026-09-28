@@ -133,16 +133,17 @@ class Solution(ProjectBase):
 
     def develop(self, project_name: str = None):
         logger.info("develop")
-        projects = self.select_projects(project_name)  # fail before a long cmake build, not after
         activity = DevelopActivity().save()
+        # Fail on an unknown project or a bad pyproject.toml before a long cmake build, not after.
+        builders = [(p, p.wheel_builder(activity.artifacts_dir)) for p in self.select_projects(project_name)]
 
         tool = self.create_tool(activity)
         tool.configure()
         tool.build()
         tool.install()
 
-        for project in projects:
-            project.develop()
+        for project, builder in builders:
+            project.develop(builder)
 
     def build(self) -> list[Path]:
         """cmake once for the solution, then one wheel per project into <solution>/dist."""

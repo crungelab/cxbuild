@@ -47,7 +47,7 @@ def test_develop_backend_reports_sit_beside_the_cli_report(cxbuild):
         assert f"[{project}_report.md]({project}_report.md)" in header
         backend = result.report(project)
         assert backend.startswith("# cxbuild build_editable — ✅ passed")
-        assert "- **wheel**:" in backend  # how the wheel gets made is the backend's business
+        assert f"- **editable wheel {project}**:" in backend
         assert not (result.root / "pkg" / project / "_cxbuild").exists()
 
 

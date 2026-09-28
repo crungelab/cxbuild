@@ -1,57 +1,35 @@
-"""What an installed cxbuild wheel contains, checked against the fixture's pyproject.toml.
+"""What a wheel from `cxbuild build` contains, once pip has installed it.
 
-Every check runs twice, once per way a wheel gets installed: `cxbuild develop`
-(pip calling the backend) and `cxbuild build` (wheels written to dist/, then
-installed with pip). They pin down what any wheel cxbuild makes must hold: every package file plus the extension, nothing else from
-the source tree, a binary wheel tagged for this interpreter, a working console
-script, and core metadata carrying every [project] field.
-
-Expected values come from the fixture itself, so the fixture is the only place
-they are written down. Assertions compare meaning, not one tool's formatting.
+Pins down what cxbuild's wheels must hold: every package file plus the
+extension, nothing else from the source tree, a binary wheel tagged for this
+interpreter, a working console script, core metadata carrying every [project]
+field, and namespace portions that ship only their own package. Editable
+installs (`cxbuild develop`) are covered in test_editable.py.
 """
 
 from __future__ import annotations
 
-import re
-import subprocess
-import sys
-import tomllib
 from importlib.machinery import EXTENSION_SUFFIXES
 from pathlib import Path
 
 import pytest
 
-from conftest import SOLUTION, clean_env, copy_solution, pip_install, query, run_cxbuild
+from checks import (
+    NAMESPACE_PORTIONS,
+    PROJECT,
+    check_console_script,
+    check_core_metadata,
+    check_dependencies,
+    check_readme,
+    check_wheel_is_binary,
+    import_namespace,
+    inspect,
+)
+from conftest import copy_solution, pip_install, run_cxbuild
 
 pytestmark = pytest.mark.pipeline
 
-PROJECT = "cxb_simple"
-PYPROJECT = tomllib.loads((SOLUTION / "pkg" / PROJECT / "pyproject.toml").read_text())["project"]
-README = (SOLUTION / "pkg" / PROJECT / PYPROJECT["readme"]).read_text()
 PY_MODULES = ["__init__.py", "util.py", "cli.py"]
-
-# Runs in a fresh interpreter, from outside the source tree: importlib.metadata
-# must find the installed dist-info, not a *.egg-info lying next to the sources.
-INSPECT = """
-import json, importlib.metadata as md
-dist = md.distribution({name!r})
-print(json.dumps({{
-    "metadata": dist.metadata.json,
-    "files": [str(f) for f in dist.files or []],
-    "wheel": dist.read_text("WHEEL"),
-    "entry_points": [[ep.group, ep.name, ep.value] for ep in dist.entry_points],
-    # Where the installer put each recorded file: scripts land outside site-packages.
-    "located": {{str(f): str(dist.locate_file(f)) for f in dist.files or []}},
-}}))
-"""
-
-
-def inspect(distribution: str, installation) -> dict:
-    return query(INSPECT.format(name=distribution), cwd=installation.root.parent)
-
-
-def normalize_name(name: str) -> str:
-    return re.sub(r"[-_.]+", "-", name).lower()  # PEP 503
 
 
 def is_extension(path: str) -> bool:
@@ -69,15 +47,13 @@ def is_expected_file(path: str) -> bool:
     )
 
 
-@pytest.fixture(scope="module", params=["develop", "build"])
-def installation(request, tmp_path_factory):
-    """The fixture solution, installed one way or the other. pytest runs every test for
-    one route before switching to the next, so each route installs exactly once."""
-    root = copy_solution(tmp_path_factory.mktemp(request.param))
-    result = run_cxbuild(root, request.param)
+@pytest.fixture(scope="module")
+def installation(tmp_path_factory):
+    """`cxbuild build`, then pip installs the wheels from dist/."""
+    root = copy_solution(tmp_path_factory.mktemp("build"))
+    result = run_cxbuild(root, "build")
     assert result.returncode == 0, result
-    if request.param == "build":
-        pip_install(*sorted((root / "dist").glob("*.whl")))
+    pip_install(*sorted((root / "dist").glob("*.whl")))
     return result
 
 
@@ -103,70 +79,23 @@ def test_nothing_else_from_the_source_tree(installed):
 
 
 def test_wheel_is_binary_for_this_interpreter(installed):
-    wheel = installed["wheel"] or ""
-    assert "Root-Is-Purelib: false" in wheel, wheel  # it carries a compiled module
-    cp = f"cp{sys.version_info.major}{sys.version_info.minor}"
-    tags = [line.removeprefix("Tag: ") for line in wheel.splitlines() if line.startswith("Tag: ")]
-    assert tags and all(t.startswith(f"{cp}-{cp}-") and not t.endswith("-any") for t in tags), wheel
+    check_wheel_is_binary(installed["wheel"])
 
 
 def test_core_metadata_matches_pyproject(installed):
-    m = installed["metadata"]
-    assert normalize_name(m["name"]) == normalize_name(PYPROJECT["name"])
-    assert m["version"] == PYPROJECT["version"]
-    assert m["summary"] == PYPROJECT["description"]
-    assert m["requires_python"] == PYPROJECT["requires-python"]
-    assert set(PYPROJECT["classifiers"]) <= set(m.get("classifier", []))
-
-    # One "Keywords" field, comma- or space-separated depending on the writer.
-    keywords = {k for field in m.get("keywords", []) for k in re.split(r"[,\s]+", field) if k}
-    assert set(PYPROJECT["keywords"]) <= keywords
-
-    author = PYPROJECT["authors"][0]
-    assert author["name"] in m["author_email"] and author["email"] in m["author_email"]
-
-    for label, url in PYPROJECT["urls"].items():
-        assert any(url in entry for entry in m.get("project_url", [])), m.get("project_url")
+    check_core_metadata(installed["metadata"])
 
 
 def test_dependencies_and_extras(installed):
-    m = installed["metadata"]
-    requires = [r.replace(" ", "") for r in m.get("requires_dist", [])]
-    for dep in PYPROJECT["dependencies"]:
-        assert dep.replace(" ", "") in requires, requires
-    for extra, deps in PYPROJECT["optional-dependencies"].items():
-        assert extra in m.get("provides_extra", [])
-        for dep in deps:
-            assert f'{dep};extra=="{extra}"' in requires, requires
+    check_dependencies(installed["metadata"])
 
 
 def test_readme_is_the_long_description(installed):
-    m = installed["metadata"]
-    assert m.get("description_content_type") == "text/markdown"
-    assert README.strip() in m.get("description", "")
+    check_readme(installed["metadata"])
 
 
 def test_console_script_is_installed_and_runs(installed, installation):
-    (name, target), = PYPROJECT["scripts"].items()
-    assert ["console_scripts", name, target] in installed["entry_points"]
-
-    # The install records the script (bin/ in a venv, /usr/local/bin for a system Python, Scripts\\ on Windows).
-    scripts = [path for f, path in installed["located"].items() if f.startswith("..") and Path(f).stem == name]
-    assert len(scripts) == 1, installed["files"]
-    script = scripts[0]
-    proc = subprocess.run(
-        [script], cwd=installation.root.parent, env=clean_env(),
-        capture_output=True, text=True, timeout=60,
-    )
-    assert proc.returncode == 0, proc.stderr
-    assert proc.stdout.strip() == "42"  # double(21), through util.py and the extension
-
-
-# --- namespace packages ---------------------------------------------------------
-# cxbns.second and cxbns.third are two projects sharing the cxbns namespace, laid
-# out like the crunge projects: no cxbns/__init__.py anywhere.
-
-NAMESPACE_PORTIONS = {"cxbns-second": "second", "cxbns-third": "third"}
+    check_console_script(installed, cwd=installation.root.parent)
 
 
 @pytest.mark.parametrize("distribution, portion", NAMESPACE_PORTIONS.items())
@@ -180,9 +109,5 @@ def test_namespace_portion_ships_only_its_own_package(distribution, portion, ins
 
 
 def test_namespace_portions_import_together(installation):
-    result = query(
-        "import json, cxbns, cxbns.second, cxbns.third; "
-        "print(json.dumps([getattr(cxbns, '__file__', None), cxbns.second.greet('ns'), cxbns.third.triple(3)]))",
-        cwd=installation.root.parent,
-    )
-    assert result == [None, "hello, ns", 9]  # __file__ None: cxbns is a namespace, not a module
+    file, _, greeting, tripled = import_namespace(cwd=installation.root.parent)
+    assert (file, greeting, tripled) == (None, "hello, ns", 9)  # __file__ None: a namespace, not a module
