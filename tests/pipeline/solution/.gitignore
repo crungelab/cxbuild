@@ -1,0 +1,7 @@
+# Written by runs in place; the tests themselves build a copy in a temp directory.
+_cxbuild/
+build/
+dist/
+*.egg-info/
+*.so
+*.pyd

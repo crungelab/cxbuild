@@ -37,30 +37,6 @@ def recursive_copy(src: Path, dst: Path, exclude_files=[], exclude_dirs=[]):
         elif item.is_file() and not any(fnmatch.fnmatch(item, pattern) for pattern in exclude_files):
             shutil.copy(item, dst)
 
-"""
-def recursive_copy(src, dst, exclude_files=None, exclude_dirs=None):
-    if exclude_files is None:
-        exclude_files = []
-    if exclude_dirs is None:
-        exclude_dirs = []
-
-    if not os.path.exists(dst):
-        os.makedirs(dst)
-
-    for item in os.listdir(src):
-        src_item = os.path.join(src, item)
-        dst_item = os.path.join(dst, item)
-
-        if os.path.isdir(src_item):
-            # Check if the directory matches any of the exclude patterns
-            if not any(fnmatch.fnmatch(item, pattern) for pattern in exclude_dirs):
-                recursive_copy(src_item, dst_item, exclude_files, exclude_dirs)
-        else:
-            # Check if the file matches any of the exclude patterns
-            if not any(fnmatch.fnmatch(item, pattern) for pattern in exclude_files):
-                shutil.copy2(src_item, dst_item)
-"""
-
 # Example usage:
 """
 src = 'source_directory'

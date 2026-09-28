@@ -1,0 +1,8 @@
+# A miniature cxbuild solution for the pipeline tests: two projects under pkg/, one CMake build.
+[project]
+name = "cxbuild-test-solution"
+version = "0.0.1"
+requires-python = ">=3.12"
+
+[tool.cxbuild]
+projects = ["pkg/*"]

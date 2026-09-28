@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import dataclasses
+import sys
 from pathlib import Path
 
+from .runner import CxBuildError, Runner
 from .tool import Tool
-import subprocess
 
 
-class PipConfigError(Exception):
+class PipConfigError(CxBuildError):
     """
     Something is misconfigured.
     """
@@ -20,16 +21,17 @@ class PipConfig:
 
 
 class PipTool(Tool):
-    def __init__(self, config: PipConfig = None) -> None:
-        super().__init__()
+    def __init__(self, config: PipConfig, runner: Runner) -> None:
+        super().__init__(runner)
         self.config = config
 
     def install(self):
-        cmd = ["python", "-m", "pip", "install", "--no-build-isolation", "--editable", "."]
-        cwd = self.config.source_dir
-        env = self.config.env
-        try:
-            result = subprocess.run(cmd, cwd=cwd, env=env, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            print("Command executed successfully. Output:\n", result.stdout)
-        except subprocess.CalledProcessError as e:
-            print(f"Command execution failed with error code {e.returncode}. Error message:\n", e.stderr)
+        # sys.executable: the interpreter running cxbuild, not whichever "python" is first on PATH.
+        # The build hooks pip calls write their own report next to cxbuild's and it links them.
+        cmd = [sys.executable, "-m", "pip", "install", "--no-build-isolation", "--editable", "."]
+        self.run(
+            cmd,
+            cwd=self.config.source_dir,
+            label=f"pip {self.config.source_dir.name}",
+            env=self.config.env,
+        )

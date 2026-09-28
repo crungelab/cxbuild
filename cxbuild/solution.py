@@ -17,6 +17,7 @@ from .activity import (
 )
 from .project_base import ProjectBase
 from .project import Project
+from .runner import CxBuildError, Runner
 
 
 def is_glob(s):
@@ -24,9 +25,10 @@ def is_glob(s):
 
 
 class Solution(ProjectBase):
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, runner: Runner) -> None:
         super().__init__(path)
         logger.debug(f"solution path: {path}")
+        self.runner = runner
         self.build_root = path / "_cxbuild"
         self.ensure()
         self.projects: list[Project] = []
@@ -39,7 +41,8 @@ class Solution(ProjectBase):
             if project:
                 return [project]
             else:
-                raise Exception(f"project not found: {project_name}")
+                known = ", ".join(self.project_map) or "none"
+                raise CxBuildError(f"project not found: {project_name} (projects: {known})")
         else:
             return self.projects
 
@@ -60,7 +63,7 @@ class Solution(ProjectBase):
                 project_paths.append(self.path / glob)
         logger.debug(f"project_paths: {project_paths}")
         for project_path in project_paths:
-            self.add_project(Project(project_path))
+            self.add_project(Project(project_path, self.runner))
 
     def add_project(self, project: Project):
         logger.debug(f"add_project: {project}")
@@ -102,6 +105,9 @@ class Solution(ProjectBase):
         )
         return config
 
+    def create_tool(self, activity: Activity) -> CMakeTool:
+        return CMakeTool(self.create_config(activity), self.runner)
+
     def clean(self):
         logger.info("clean")
         for project in self.projects:
@@ -117,29 +123,27 @@ class Solution(ProjectBase):
     def configure(self):
         logger.info("configure")
         activity = ConfigureActivity().save()
-        config = self.create_config(activity)
-        tool = CMakeTool(config)
+        tool = self.create_tool(activity)
         tool.configure()
 
     def develop(self, project_name: str = None):
         logger.info("develop")
+        projects = self.select_projects(project_name)  # fail before a long cmake build, not after
         activity = DevelopActivity().save()
 
-        config = self.create_config(activity)
-        tool = CMakeTool(config)
+        tool = self.create_tool(activity)
         tool.configure()
         tool.build()
         tool.install()
 
-        for project in self.select_projects(project_name):
+        for project in projects:
             project.develop()
 
     def build(self):
         logger.info("build")
         activity = BuildActivity().save()
 
-        config = self.create_config(activity)
-        tool = CMakeTool(config)
+        tool = self.create_tool(activity)
         tool.configure()
         tool.build()
         tool.install()
@@ -150,6 +154,5 @@ class Solution(ProjectBase):
     def install(self):
         logger.info("install")
         activity = InstallActivity().save()
-        config = self.create_config(activity)
-        tool = CMakeTool(config)
+        tool = self.create_tool(activity)
         tool.install()

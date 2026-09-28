@@ -1,0 +1,38 @@
+[project]
+name = "cxbuild-tests"
+version = "0.0.0"
+description = "Testing environment for cxbuild"
+requires-python = ">=3.12"
+
+[tool.hatch.envs.default]
+python = "3.12"
+detached = true
+dependencies = [
+    "pytest",
+    "pytest-cov",
+    "mypy",
+    "loguru==0.7.3",
+    "cmake>=3.18",  # optional: only needed where cmake isn't reliably on PATH (CI)
+]
+# Editable, so the CLI and the build hooks pip calls both run the working tree.
+post-install-commands = ["python -m pip install -e {root:parent}"]
+
+[tool.hatch.envs.default.scripts]
+unit = "pytest unit {args}"
+pipeline = "pytest pipeline {args}"
+cov = "pytest --cov --cov-report=term-missing {args}"
+
+[tool.pytest.ini_options]
+log_cli = false
+testpaths = ["unit", "pipeline"]
+norecursedirs = ["pipeline/solution", "_cxbuild"]
+markers = ["pipeline: builds fixture solutions with cmake (slow; needs a C++ compiler)"]
+
+[tool.coverage.run]
+source = ["cxbuild"]  # by package name: measures the installed (editable) cxbuild
+branch = true
+parallel = true
+omit = ["*/cxbuild/__about__.py"]
+
+[tool.coverage.report]
+exclude_lines = ["no cov", "if __name__ == .__main__.:", "if TYPE_CHECKING:"]

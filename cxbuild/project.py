@@ -12,11 +12,13 @@ from .activity import get_activity, BuildActivity, DevelopActivity
 from .project_base import ProjectBase
 from .build_tool import BuildConfig, BuildTool
 from .pip_tool import PipConfig, PipTool
-from .copyutils import copy_directory_contents
+from .runner import CxBuildError, Runner
+
 
 class Project(ProjectBase):
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, runner: Runner) -> None:
         super().__init__(path)
+        self.runner = runner
 
     def clean(self):
         logger.debug('clean')
@@ -37,11 +39,11 @@ class Project(ProjectBase):
 
     def develop(self):
         logger.debug('develop')
-        tool = PipTool(PipConfig(env=os.environ, source_dir=self.path))
+        tool = PipTool(PipConfig(env=os.environ, source_dir=self.path), self.runner)
         tool.install()
 
     def build(self):
-        tool = BuildTool(BuildConfig(env=os.environ, source_dir=self.path))
+        tool = BuildTool(BuildConfig(env=os.environ, source_dir=self.path), self.runner)
         tool.build()
 
     def build_wheel(
@@ -56,44 +58,45 @@ class Project(ProjectBase):
         split_name = name.split('.')
         split_name.pop()
         install_prefix = Path(*split_name)
-        logger.debug(f'install prefix{install_prefix}')
-        
+        logger.debug(f'install prefix {install_prefix}')
+
         activity = get_activity()
         logger.debug(f'activity: {activity.__dict__}')
 
         editable = True if isinstance(activity, DevelopActivity) else False
 
         dist_dir = self.path / 'dist'
-        '''
-        if dist_dir.exists():
-            shutil.rmtree(dist_dir)
-        '''
 
         #Note:  This is a hack, but I didn't want to call yet another subprocess
         sys.argv = ["setup.py", "bdist_wheel"]
-        dist: Distribution = setuptools.setup(
-            ext_modules=[
-                CMakeExtension(
-                    name=name,
-                    source_dir=Path.cwd(),
-                    install_prefix=install_prefix,
-                    editable=editable
-                ),
-            ],
-            cmdclass=dict(
-                build_ext=ExtensionBuilder,
+        with self.runner.capture("setuptools", "setup.py bdist_wheel", cwd=self.path):
+            dist: Distribution = setuptools.setup(
+                ext_modules=[
+                    CMakeExtension(
+                        name=name,
+                        source_dir=Path.cwd(),
+                        install_prefix=install_prefix,
+                        editable=editable,
+                    ),
+                ],
+                cmdclass=dict(
+                    build_ext=ExtensionBuilder,
+                )
             )
-        )
+
+        # dist/ isn't cleaned on this path, so it can hold wheels from earlier builds.
+        wheels = sorted(dist_dir.glob('*.whl'), key=lambda p: p.stat().st_mtime)
+        if not wheels:
+            raise CxBuildError(f"setuptools produced no wheel in {dist_dir}")
+        wheel = wheels[-1]
+        logger.debug(f'wheel: {wheel}')
 
         out_dir = Path(wheel_directory)
-        items = list(dist_dir.iterdir())
-        dist_name = items[0].name
-        logger.debug(dist_name)
+        if out_dir.resolve() != dist_dir.resolve():
+            out_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(wheel, out_dir / wheel.name)
 
-        if dist_dir != out_dir:
-            copy_directory_contents(dist_dir, out_dir)
-
-        return dist_name
+        return wheel.name
 
     def write_requirements(self, requirements):
         with open(self.path / 'requirements.txt', 'w') as f:

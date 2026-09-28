@@ -6,6 +6,8 @@ import json
 
 import pydantic
 
+from .runner import CxBuildError
+
 
 class BuildMode(str, Enum):
     DEBUG = 'DEBUG'
@@ -22,8 +24,9 @@ class ActivityType(str, Enum):
 
 class Activity(pydantic.BaseModel):
     type: ActivityType = None
-    root: Path = Path.cwd()
-    path: Path = Path.cwd() / '_cxbuild/activity.json'
+    # Factories, not values: Path.cwd() as a plain default is evaluated once, at import.
+    root: Path = pydantic.Field(default_factory=Path.cwd)
+    path: Path = pydantic.Field(default_factory=lambda: Path.cwd() / '_cxbuild/activity.json')
     mode: BuildMode = BuildMode.RELEASE
 
     def __new__(cls, *args, **kwargs):
@@ -37,10 +40,10 @@ class Activity(pydantic.BaseModel):
 
     # Note:  I'm tempted to serialize to the environment itself instead of a file ...
     def save(self):
+        """Write the activity to its JSON file and point CBX_ACTIVITY at it, for the build hooks."""
         os.environ['CBX_ACTIVITY'] = str(self.path)
-        """Serialize an activity to a JSON string"""
         with open(self.path, 'w') as f:
-            json.dump({'type': self.type.value, 'object': self.json()}, f)
+            json.dump({'type': self.type.value, 'object': self.model_dump_json()}, f)
         return self
 
 _activity: Activity = None
@@ -61,24 +64,31 @@ class DevelopActivity(Activity):
 class InstallActivity(Activity):
     type: ActivityType = ActivityType.InstallActivity
 
+
+ACTIVITY_CLASSES: dict[str, type[Activity]] = {
+    cls.__name__: cls for cls in (ConfigureActivity, BuildActivity, DevelopActivity, InstallActivity)
+}
+
+
 def deserialize_activity(path: Path):
     """Deserialize an activity from a JSON file"""
     with open(path, "r") as f:
         data = json.load(f)
-
-    if data["type"] == ActivityType.ConfigureActivity.value:
-        return ConfigureActivity.parse_raw(data["object"])
-    elif data["type"] == ActivityType.BuildActivity.value:
-        return BuildActivity.parse_raw(data["object"])
-    elif data["type"] == ActivityType.DevelopActivity.value:
-        return DevelopActivity.parse_raw(data["object"])
-    else:
-        raise ValueError("Invalid type")
+    cls = ACTIVITY_CLASSES.get(data["type"])
+    if cls is None:
+        raise CxBuildError(f"invalid activity type {data['type']!r} in {path}")
+    return cls.model_validate_json(data["object"])
 
 
 def get_activity() -> Activity:
     global _activity
     if _activity:
         return _activity
-    path = Path(os.environ["CBX_ACTIVITY"])
-    return deserialize_activity(path)
+    location = os.environ.get("CBX_ACTIVITY")
+    if not location:
+        # The backend only packages what a cxbuild run already built with cmake.
+        raise CxBuildError(
+            "no cxbuild activity: CBX_ACTIVITY is not set. This backend packages artifacts "
+            "built by the cxbuild CLI; run `cxbuild develop` (or build) from the solution root."
+        )
+    return deserialize_activity(Path(location))

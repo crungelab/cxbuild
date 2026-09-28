@@ -5,10 +5,13 @@ import sys, os
 import shutil
 from pathlib import Path
 
+from loguru import logger
+
+from .runner import CxBuildError, Runner
 from .tool import Tool
 
 
-class CMakeConfigError(Exception):
+class CMakeConfigError(CxBuildError):
     """
     Something is misconfigured.
     """
@@ -39,23 +42,20 @@ class CMakeConfig:
             raise CMakeConfigError(msg)
 
 def join_posix_paths(paths: list[Path]):
-    posix_paths = ";".join(str(path.as_posix()) for path in paths)
-    print(posix_paths)
-    return posix_paths
+    return ";".join(str(path.as_posix()) for path in paths)
 
 class CMakeTool(Tool):
-    def __init__(self, config: CMakeConfig) -> None:
-        super().__init__()
+    def __init__(self, config: CMakeConfig, runner: Runner) -> None:
+        super().__init__(runner)
         self.config = config
 
     def configure(self):
-        print('configure')
         # Initialize the CMake configuration arguments
         configure_args = []
 
         # Select the appropriate generator and accompanying settings
         if self.config.generator is not None:
-            configure_args += [f'-G "{self.config.generator}"']
+            configure_args += ["-G", self.config.generator]  # no shell: quotes would reach cmake
 
             if self.config.generator == "Ninja":
                 configure_args += [f"-DCMAKE_MAKE_PROGRAM={shutil.which('ninja')}"]
@@ -64,12 +64,12 @@ class CMakeTool(Tool):
         cmake_install_prefix = Path.cwd() / '_cxbuild/artifacts'
 
         cmake_prefix_path = join_posix_paths(self.config.prefix_dirs)
-        print('cmake_prefix_path: ', cmake_prefix_path)
+        logger.debug(f'cmake_prefix_path: {cmake_prefix_path}')
 
         configure_args += [
+            f'-DPython_EXECUTABLE={Path(sys.executable).as_posix()}',  # the interpreter running cxbuild
             f'-DCMAKE_BUILD_TYPE={self.config.build_type}',
             f'-DCMAKE_INSTALL_PREFIX:PATH={cmake_install_prefix}',
-            #f"-DCMAKE_MODULE_PATH:PATH={cmake_module_path}",
             f'-DCMAKE_PREFIX_PATH:PATH={cmake_prefix_path}',
         ]
 
@@ -81,15 +81,15 @@ class CMakeTool(Tool):
             self.config.build_dir,
         ] + configure_args
 
-        self.run(command)
+        self.run(command, label="configure", env=self.config.env)
 
     def build(self):
-        print('build')
-        build_args = ["--config", self.config.build_type]
+        build_args = ["--config", self.config.build_type, "--parallel", str(os.cpu_count() or 1)]
         command = ["cmake", "--build", self.config.build_dir] + build_args
-        self.run(command)
+        # The compiler runs in the build dir: relative paths in its diagnostics start there.
+        self.run(command, label="build", env=self.config.env, diag_base=self.config.build_dir)
 
     def install(self):
-        print('install')
-        command = ["cmake", "--install", self.config.build_dir]
-        self.run(command)
+        # Multi-config generators (Visual Studio) install Release unless told otherwise.
+        command = ["cmake", "--install", self.config.build_dir, "--config", self.config.build_type]
+        self.run(command, label="install", env=self.config.env)

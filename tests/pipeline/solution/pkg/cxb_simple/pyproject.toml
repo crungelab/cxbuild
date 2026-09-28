@@ -1,0 +1,15 @@
+[build-system]
+requires = ["cxbuild"]
+build-backend = "cxbuild.backend"
+
+[project]
+name = "cxb_simple"
+version = "0.0.1"
+description = "cxbuild pipeline-test fixture: a minimal C++ extension"
+requires-python = ">=3.12"
+
+[tool.setuptools]
+packages = ["cxb_simple"]
+
+[tool.cxbuild.extension]
+name = "cxb_simple._core"  # install prefix "cxb_simple", matching the CMake install DESTINATION

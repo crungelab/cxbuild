@@ -1,20 +1,26 @@
-import subprocess
+from __future__ import annotations
+
+import os
+from pathlib import Path
+from typing import Mapping, Sequence
+
+from .runner import Runner, Step
 
 
 class Tool:
-    def __init__(self) -> None:
-        pass
+    """Base for the tools cxbuild drives. Every command goes through the Runner,
+    so it is logged, reported, and raises BuildStepError if it fails."""
 
-    def run(self, cmd: list):
-        #subprocess.check_call(cmd)
-        subprocess.run(cmd)
-        """
-        #cwd = self.config.source_dir
-        #env = self.config.env
-        try:
-            #result = subprocess.run(cmd, cwd=cwd, env=env, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            result = subprocess.run(cmd)
-            print("Command executed successfully. Output:\n", result.stdout)
-        except subprocess.CalledProcessError as e:
-            print(f"Command execution failed with error code {e.returncode}. Error message:\n", e.stderr)
-        """
+    def __init__(self, runner: Runner) -> None:
+        self.runner = runner
+
+    def run(
+        self,
+        command: Sequence[str | os.PathLike],
+        *,
+        cwd: Path | None = None,
+        label: str | None = None,
+        env: Mapping[str, str] | None = None,
+        diag_base: Path | None = None,
+    ) -> Step:
+        return self.runner.run(list(command), cwd or Path.cwd(), label=label, env=env, diag_base=diag_base)
