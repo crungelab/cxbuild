@@ -15,11 +15,12 @@ def test_develop_builds_and_installs_every_project(cxbuild, solution):
     assert result.returncode == 0, result
 
     check = run_python(
-        "import cxb_simple, cxb_second; print(cxb_simple.add(2, 3), cxb_second.greet('cxbuild'))",
+        "import cxb_simple, cxbns.second, cxbns.third; "
+        "print(cxb_simple.add(2, 3), cxbns.second.greet('cxbuild'), cxbns.third.triple(3))",
         cwd=solution.parent,  # not the solution: import what pip installed, not the source tree
     )
     assert check.returncode == 0, check.stderr
-    assert check.stdout.strip() == "5 hello, cxbuild"
+    assert check.stdout.strip() == "5 hello, cxbuild 9"
 
 
 def test_develop_report_records_every_step(cxbuild):
@@ -51,13 +52,14 @@ def test_develop_backend_reports_sit_beside_the_cli_report(cxbuild):
 
 
 def test_develop_selects_one_project(cxbuild):
-    result = cxbuild("develop", "cxb_second")
+    result = cxbuild("develop", "cxbns-second")  # by distribution name
     assert result.returncode == 0, result
 
     report = result.report()
-    assert "| pip cxb_second |" in report
-    assert "| pip cxb_simple |" not in report
-    assert not (result.state_dir / "cxb_simple_report.md").exists()
+    assert "| pip second |" in report  # steps and reports are named by project directory
+    for other in ("cxb_simple", "third"):
+        assert f"| pip {other} |" not in report
+        assert not (result.state_dir / f"{other}_report.md").exists()
 
 
 def test_develop_unknown_project_is_a_clean_error(cxbuild):

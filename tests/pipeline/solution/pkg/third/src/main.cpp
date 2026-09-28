@@ -10,19 +10,19 @@
 #  include <Python.h>
 #endif
 
-static PyObject* greet(PyObject*, PyObject* args) {
-    const char* name;
-    if (!PyArg_ParseTuple(args, "s", &name)) return nullptr;
-    return PyUnicode_FromFormat("hello, %s", name);
+static PyObject* triple(PyObject*, PyObject* args) {
+    long x;
+    if (!PyArg_ParseTuple(args, "l", &x)) return nullptr;
+    return PyLong_FromLong(3 * x);
 }
 
 static PyMethodDef methods[] = {
-    {"greet", greet, METH_VARARGS, "Greet someone."},
+    {"triple", triple, METH_VARARGS, "Multiply by three."},
     {nullptr, nullptr, 0, nullptr},
 };
 
 static PyModuleDef module_def = {
-    PyModuleDef_HEAD_INIT, "_core", "cxb_second: cxbuild pipeline-test module", -1, methods,
+    PyModuleDef_HEAD_INIT, "_core", "cxbns.third: cxbuild pipeline-test module", -1, methods,
 };
 
 PyMODINIT_FUNC PyInit__core() { return PyModule_Create(&module_def); }

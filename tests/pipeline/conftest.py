@@ -23,7 +23,10 @@ from typing import Any, Callable
 import pytest
 
 SOLUTION = Path(__file__).parent / "solution"
-PROJECTS = ["cxb_simple", "cxb_second"]
+# Project directory under pkg/ -> distribution name. They differ for the namespace
+# portions, as in crunge (pkg/imgui holds crunge-imgui).
+PROJECTS = {"cxb_simple": "cxb_simple", "second": "cxbns-second", "third": "cxbns-third"}
+RETIRED = ["cxb_second"]  # fixture projects that no longer exist, in case an old run installed them
 TIMEOUT = 600  # seconds; a cold cmake configure + build of both projects is well under this
 
 # Leaking these from the shell that started pytest would change what cxbuild does.
@@ -99,7 +102,7 @@ def run_cxbuild(root: Path, *args: str) -> CxbuildResult:
 def uninstall_fixture_projects():
     yield
     subprocess.run(
-        [sys.executable, "-m", "pip", "uninstall", "-y", *PROJECTS],
+        [sys.executable, "-m", "pip", "uninstall", "-y", *PROJECTS.values(), *RETIRED],
         capture_output=True, text=True, env=clean_env(),
     )
 
@@ -111,7 +114,7 @@ def solution(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def cxbuild(solution: Path) -> Callable[..., CxbuildResult]:
-    """Run the cxbuild CLI in the solution copy: cxbuild("develop", "cxb_second")."""
+    """Run the cxbuild CLI in the solution copy: cxbuild("develop", "cxbns-second")."""
 
     def run(*args: str) -> CxbuildResult:
         return run_cxbuild(solution, *args)

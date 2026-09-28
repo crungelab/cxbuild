@@ -12,7 +12,6 @@ they are written down. Assertions compare meaning, not one tool's formatting.
 from __future__ import annotations
 
 import re
-import shutil
 import subprocess
 import sys
 import tomllib
@@ -32,16 +31,22 @@ PY_MODULES = ["__init__.py", "util.py", "cli.py"]
 
 # Runs in a fresh interpreter, from outside the source tree: importlib.metadata
 # must find the installed dist-info, not a *.egg-info lying next to the sources.
-INSPECT = f"""
+INSPECT = """
 import json, importlib.metadata as md
-dist = md.distribution({PROJECT!r})
+dist = md.distribution({name!r})
 print(json.dumps({{
     "metadata": dist.metadata.json,
     "files": [str(f) for f in dist.files or []],
     "wheel": dist.read_text("WHEEL"),
     "entry_points": [[ep.group, ep.name, ep.value] for ep in dist.entry_points],
+    # Where the installer put each recorded file: scripts land outside site-packages.
+    "located": {{str(f): str(dist.locate_file(f)) for f in dist.files or []}},
 }}))
 """
+
+
+def inspect(distribution: str, developed) -> dict:
+    return query(INSPECT.format(name=distribution), cwd=developed.root.parent)
 
 
 def normalize_name(name: str) -> str:
@@ -65,7 +70,7 @@ def is_expected_file(path: str) -> bool:
 
 @pytest.fixture(scope="module")
 def installed(developed):
-    return query(INSPECT, cwd=developed.root.parent)
+    return inspect(PROJECT, developed)
 
 
 def test_python_modules_are_installed(installed):
@@ -132,11 +137,39 @@ def test_console_script_is_installed_and_runs(installed, developed):
     (name, target), = PYPROJECT["scripts"].items()
     assert ["console_scripts", name, target] in installed["entry_points"]
 
-    script = shutil.which(name, path=str(Path(sys.executable).parent))
-    assert script, f"{name} not in {Path(sys.executable).parent}"
+    # The install records the script (bin/ in a venv, /usr/local/bin for a system Python, Scripts\\ on Windows).
+    scripts = [path for f, path in installed["located"].items() if f.startswith("..") and Path(f).stem == name]
+    assert len(scripts) == 1, installed["files"]
+    script = scripts[0]
     proc = subprocess.run(
         [script], cwd=developed.root.parent, env=clean_env(),
         capture_output=True, text=True, timeout=60,
     )
     assert proc.returncode == 0, proc.stderr
     assert proc.stdout.strip() == "42"  # double(21), through util.py and the extension
+
+
+# --- namespace packages ---------------------------------------------------------
+# cxbns.second and cxbns.third are two projects sharing the cxbns namespace, laid
+# out like the crunge projects: no cxbns/__init__.py anywhere.
+
+NAMESPACE_PORTIONS = {"cxbns-second": "second", "cxbns-third": "third"}
+
+
+@pytest.mark.parametrize("distribution, portion", NAMESPACE_PORTIONS.items())
+def test_namespace_portion_ships_only_its_own_package(distribution, portion, developed):
+    files = inspect(distribution, developed)["files"]
+    # An __init__.py here would turn the namespace into an ordinary package: every
+    # portion would install the same file, and uninstalling one would break the rest.
+    assert "cxbns/__init__.py" not in files, files
+    package = [f for f in files if ".dist-info/" not in f]
+    assert package and all(f.startswith(f"cxbns/{portion}/") for f in package), package
+
+
+def test_namespace_portions_import_together(developed):
+    result = query(
+        "import json, cxbns, cxbns.second, cxbns.third; "
+        "print(json.dumps([getattr(cxbns, '__file__', None), cxbns.second.greet('ns'), cxbns.third.triple(3)]))",
+        cwd=developed.root.parent,
+    )
+    assert result == [None, "hello, ns", 9]  # __file__ None: cxbns is a namespace, not a module
