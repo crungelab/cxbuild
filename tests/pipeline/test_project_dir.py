@@ -17,8 +17,8 @@ def test_develop_from_a_project_develops_that_project(solution):
     assert result.returncode == 0, result
 
     report = result.report()  # at the solution root, not in the project
-    assert "| pip second |" in report
-    assert "| pip cxb_simple |" not in report and "| pip third |" not in report
+    assert "| develop second |" in report
+    assert "| develop cxb_simple |" not in report and "| develop third |" not in report
     assert not (solution / "pkg" / "second" / "_cxbuild").exists()
     assert (solution / "_cxbuild" / "artifacts" / "cxbns" / "second").is_dir()
 
@@ -30,14 +30,14 @@ def test_develop_from_a_project_develops_that_project(solution):
 def test_develop_from_deeper_inside_a_project(solution):
     result = run_cxbuild(solution, "develop", cwd=solution / "pkg" / "second" / "cxbns" / "second")
     assert result.returncode == 0, result
-    assert "| pip second |" in result.report()
+    assert "| develop second |" in result.report()
 
 
 def test_a_name_still_wins_from_inside_a_project(solution):
     result = run_cxbuild(solution, "develop", "cxb_simple", cwd=solution / "pkg" / "second")
     assert result.returncode == 0, result
     report = result.report()
-    assert "| pip cxb_simple |" in report and "| pip second |" not in report
+    assert "| develop cxb_simple |" in report and "| develop second |" not in report
 
 
 def test_outside_a_solution_is_a_clean_error(tmp_path):

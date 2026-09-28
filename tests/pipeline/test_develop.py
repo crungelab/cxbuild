@@ -29,7 +29,7 @@ def test_develop_report_records_every_step(cxbuild):
 
     report = result.report()
     assert report.startswith("# cxbuild develop — ✅ passed")
-    for label in ("configure", "build", "install", *(f"pip {p}" for p in PROJECTS)):
+    for label in ("configure", "build", "install", *(f"develop {p}" for p in PROJECTS)):
         assert f"| {label} |" in report, f"no summary row for {label!r}"
     assert "[cxbuild.log](cxbuild.log)" in report
 
@@ -56,9 +56,9 @@ def test_develop_selects_one_project(cxbuild):
     assert result.returncode == 0, result
 
     report = result.report()
-    assert "| pip second |" in report  # steps and reports are named by project directory
+    assert "| develop second |" in report  # steps and reports are named by project directory
     for other in ("cxb_simple", "third"):
-        assert f"| pip {other} |" not in report
+        assert f"| develop {other} |" not in report
         assert not (result.state_dir / f"{other}_report.md").exists()
 
 
@@ -87,4 +87,4 @@ def test_develop_compile_error_fails_with_diagnostics(cxbuild, solution):
     assert "## Diagnostics" in report
     assert "pkg/cxb_simple/src/main.cpp" in report  # grouped under the file, relative to the root
     assert "undeclared_name" in report              # GCC, Clang and MSVC all name the identifier
-    assert "| pip " not in report                   # nothing after the failed build ran
+    assert "| develop " not in report                   # nothing after the failed build ran

@@ -173,7 +173,7 @@ class Solution(ProjectBase):
         activity = self.activity(DevelopActivity)
         # Fail on an unknown project or a bad pyproject.toml before a long cmake build, not after.
         builders = [(p, p.wheel_builder(activity.artifacts_dir)) for p in self.select_projects(project_name)]
-        self.runner.expect(3 + len(builders))  # configure, build, install, then pip per project
+        self.runner.expect(3 + len(builders))  # configure, build, install, then an install per project
 
         tool = self.create_tool(activity)
         tool.configure()

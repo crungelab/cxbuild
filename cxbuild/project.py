@@ -66,7 +66,7 @@ class Project(ProjectBase):
                 raise CxBuildError(f"no build output in {built}: has cmake built and installed this project?")
             logger.debug(f"copying {built} -> {self.path / package}")
             copy_directory_contents(built, self.path / package)
-        tool = PipTool(PipConfig(env=os.environ, source_dir=self.path), self.runner)
+        tool = PipTool(PipConfig(env=dict(os.environ), source_dir=self.path, name=self.name), self.runner)
         tool.install()
 
     # --- the PEP 517 backend side ------------------------------------------

@@ -99,10 +99,23 @@ def run_cxbuild(root: Path, *args: str, cwd: Path | None = None) -> CxbuildResul
     return CxbuildResult(proc.returncode, proc.stdout, root)
 
 
+def installer(action: str) -> tuple[str, list[str]]:
+    """(name, command prefix) for `install` or `uninstall`, with the installer cxbuild itself would
+    pick, so the tests run the same way in a uv environment (no pip) as in a pip one."""
+    from cxbuild.pip_tool import find_uv, installer as cxbuild_installer
+
+    name, _ = cxbuild_installer()
+    if name == "uv":
+        return name, [find_uv(), "pip", action, "--python", sys.executable]
+    return name, [sys.executable, "-m", "pip", action] + (["-y"] if action == "uninstall" else [])
+
+
 def pip_install(*wheels: Path) -> None:
     """Install built wheels into the test environment, replacing any earlier install."""
+    name, command = installer("install")
+    reinstall = "--reinstall" if name == "uv" else "--force-reinstall"
     proc = subprocess.run(
-        [sys.executable, "-m", "pip", "install", "--no-deps", "--force-reinstall", *map(str, wheels)],
+        [*command, "--no-deps", reinstall, *map(str, wheels)],
         capture_output=True, text=True, env=clean_env(), timeout=TIMEOUT,
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
@@ -112,7 +125,7 @@ def pip_install(*wheels: Path) -> None:
 def uninstall_fixture_projects():
     yield
     subprocess.run(
-        [sys.executable, "-m", "pip", "uninstall", "-y", *PROJECTS.values(), *RETIRED],
+        [*installer("uninstall")[1], *PROJECTS.values(), *RETIRED],
         capture_output=True, text=True, env=clean_env(),
     )
 
