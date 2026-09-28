@@ -25,6 +25,7 @@ class CMakeConfig:
 
     module_dirs: list[Path] = dataclasses.field(default_factory=list)
     prefix_dirs: list[Path] = dataclasses.field(default_factory=list)
+    install_dir: Path | None = None  # CMAKE_INSTALL_PREFIX; default <source_dir>/_cxbuild/artifacts
     init_cache_file: Path = dataclasses.field(init=False, default=Path())
     env: dict[str, str] = dataclasses.field(init=False, default_factory=os.environ.copy)
     single_config: bool = not sys.platform.startswith("win32")
@@ -61,7 +62,7 @@ class CMakeTool(Tool):
                 configure_args += [f"-DCMAKE_MAKE_PROGRAM={shutil.which('ninja')}"]
 
         # CMake configure arguments
-        cmake_install_prefix = Path.cwd() / '_cxbuild/artifacts'
+        cmake_install_prefix = self.config.install_dir or self.config.source_dir / '_cxbuild/artifacts'
 
         cmake_prefix_path = join_posix_paths(self.config.prefix_dirs)
         logger.debug(f'cmake_prefix_path: {cmake_prefix_path}')
@@ -81,15 +82,15 @@ class CMakeTool(Tool):
             self.config.build_dir,
         ] + configure_args
 
-        self.run(command, label="configure", env=self.config.env)
+        self.run(command, cwd=self.config.source_dir, label="configure", env=self.config.env)
 
     def build(self):
         build_args = ["--config", self.config.build_type, "--parallel", str(os.cpu_count() or 1)]
         command = ["cmake", "--build", self.config.build_dir] + build_args
         # The compiler runs in the build dir: relative paths in its diagnostics start there.
-        self.run(command, label="build", env=self.config.env, diag_base=self.config.build_dir)
+        self.run(command, cwd=self.config.source_dir, label="build", env=self.config.env, diag_base=self.config.build_dir)
 
     def install(self):
         # Multi-config generators (Visual Studio) install Release unless told otherwise.
         command = ["cmake", "--install", self.config.build_dir, "--config", self.config.build_type]
-        self.run(command, label="install", env=self.config.env)
+        self.run(command, cwd=self.config.source_dir, label="install", env=self.config.env)

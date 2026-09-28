@@ -88,10 +88,11 @@ def copy_solution(dest: Path) -> Path:
     return root
 
 
-def run_cxbuild(root: Path, *args: str) -> CxbuildResult:
+def run_cxbuild(root: Path, *args: str, cwd: Path | None = None) -> CxbuildResult:
+    """Run the cxbuild CLI for the solution at `root`, from `cwd` (default: the root itself)."""
     proc = subprocess.run(
         [sys.executable, "-c", "from cxbuild.cli import cli; cli()", *args],
-        cwd=root, env=clean_env(),
+        cwd=cwd or root, env=clean_env(),
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
         timeout=TIMEOUT,
     )

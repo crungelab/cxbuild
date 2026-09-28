@@ -1,6 +1,7 @@
 import shutil
 import site
 import importlib
+import tomllib
 from pathlib import Path
 
 from loguru import logger
@@ -25,8 +26,30 @@ def is_glob(s):
     return any(char in s for char in "*?[]")
 
 
+def find_solution_root(start: Path) -> Path:
+    """The nearest directory, from `start` upward, whose pyproject.toml lists cxbuild projects.
+
+    Lets cxbuild run from anywhere inside a solution: the root itself, a project
+    directory, or a directory within a project. Plain TOML is read, not the full
+    model, so an unrelated pyproject.toml on the way up can't stop the search.
+    """
+    start = Path(start).resolve()
+    for directory in (start, *start.parents):
+        file = directory / "pyproject.toml"
+        if not file.is_file():
+            continue
+        try:
+            data = tomllib.loads(file.read_text(encoding="utf-8"))
+        except (OSError, tomllib.TOMLDecodeError):
+            continue
+        if data.get("tool", {}).get("cxbuild", {}).get("projects"):
+            return directory
+    raise CxBuildError(f"not inside a cxbuild solution: no pyproject.toml with [tool.cxbuild] projects above {start}")
+
+
 class Solution(ProjectBase):
     def __init__(self, path: Path, runner: Runner) -> None:
+        path = Path(path).resolve()
         super().__init__(path)
         logger.debug(f"solution path: {path}")
         self.runner = runner
@@ -35,6 +58,18 @@ class Solution(ProjectBase):
         self.projects: list[Project] = []
         self.project_map: dict[str, Project] = {}
         self.create_projects()
+
+    def project_containing(self, path: Path) -> Project | None:
+        """The project whose directory is `path` or contains it."""
+        path = Path(path).resolve()
+        for project in self.projects:
+            if path == project.path or project.path in path.parents:
+                return project
+        return None
+
+    def activity(self, kind: type[Activity]) -> Activity:
+        """A saved activity rooted at the solution, wherever cxbuild was started from."""
+        return kind(root=self.path, path=self.build_root / "activity.json").save()
 
     def select_projects(self, project_name: str = None):
         if project_name:
@@ -59,9 +94,9 @@ class Solution(ProjectBase):
         project_paths = []
         for glob in project_globs:
             if is_glob(glob):
-                project_paths += list(self.path.glob(glob))
+                project_paths += sorted(p.resolve() for p in self.path.glob(glob))
             else:
-                project_paths.append(self.path / glob)
+                project_paths.append((self.path / glob).resolve())
         logger.debug(f"project_paths: {project_paths}")
         for project_path in project_paths:
             self.add_project(Project(project_path, self.runner))
@@ -98,11 +133,12 @@ class Solution(ProjectBase):
 
         logger.info(f"Configuring in {build_type} mode")
         config = CMakeConfig(
-            source_dir=Path("."),
-            build_dir=Path("_cxbuild/build"),
+            source_dir=self.path,
+            build_dir=self.build_root / "build",
             build_type=build_type,
             generator=None,
             prefix_dirs=prefix_dirs,
+            install_dir=activity.artifacts_dir,
         )
         return config
 
@@ -127,14 +163,14 @@ class Solution(ProjectBase):
 
     def configure(self):
         logger.info("configure")
-        activity = ConfigureActivity().save()
+        activity = self.activity(ConfigureActivity)
         self.runner.expect(1)
         tool = self.create_tool(activity)
         tool.configure()
 
     def develop(self, project_name: str = None):
         logger.info("develop")
-        activity = DevelopActivity().save()
+        activity = self.activity(DevelopActivity)
         # Fail on an unknown project or a bad pyproject.toml before a long cmake build, not after.
         builders = [(p, p.wheel_builder(activity.artifacts_dir)) for p in self.select_projects(project_name)]
         self.runner.expect(3 + len(builders))  # configure, build, install, then pip per project
@@ -150,7 +186,7 @@ class Solution(ProjectBase):
     def build(self) -> list[Path]:
         """cmake once for the solution, then one wheel per project into <solution>/dist."""
         logger.info("build")
-        activity = BuildActivity().save()
+        activity = self.activity(BuildActivity)
         # Fail on a bad pyproject.toml (readme, license files) before a long cmake build, not after.
         builders = [(p, p.wheel_builder(activity.artifacts_dir)) for p in self.projects]
         self.runner.expect(3 + len(builders))  # configure, build, install, then a wheel per project
@@ -164,7 +200,7 @@ class Solution(ProjectBase):
 
     def install(self):
         logger.info("install")
-        activity = InstallActivity().save()
+        activity = self.activity(InstallActivity)
         self.runner.expect(1)
         tool = self.create_tool(activity)
         tool.install()

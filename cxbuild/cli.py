@@ -12,17 +12,23 @@ from .console import console
 from .cxbuild import CxBuild
 from .logsetup import configure_logging
 from .runner import BuildStepError, CxBuildError, Runner
+from .solution import find_solution_root
 
 
 @contextmanager
 def session(ctx: Context, label: str) -> Iterator[CxBuild]:
     """Log and report one CLI command. The only place cxbuild turns errors into an exit code."""
-    root = Path.cwd()
-    os.environ["CXBUILD_ROOT"] = str(root.resolve())  # hooks run by pip put their reports beside ours
+    start = Path.cwd()
+    try:
+        root = find_solution_root(start)  # cxbuild runs from anywhere inside the solution
+    except CxBuildError as e:
+        console.print(f"[red]cxbuild: {e}[/]")
+        ctx.exit(1)
+    os.environ["CXBUILD_ROOT"] = str(root)  # hooks run by pip put their reports beside ours
     configure_logging(root)
     try:
         with Runner(root, label, verbose=ctx.obj["verbose"]) as runner:
-            yield CxBuild(runner)
+            yield CxBuild(runner, root, start)
     except CxBuildError as e:
         if not isinstance(e, BuildStepError):  # the runner already printed those
             console.print(f"[red]cxbuild: {e}[/]")
