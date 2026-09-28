@@ -2,11 +2,30 @@
 requires = ["cxbuild"]
 build-backend = "cxbuild.backend"
 
+# Deliberately more than the minimum: test_wheel_contents.py checks that every
+# field here reaches the installed metadata, whichever backend writes the wheel.
 [project]
 name = "cxb_simple"
 version = "0.0.1"
 description = "cxbuild pipeline-test fixture: a minimal C++ extension"
+readme = "README.md"
 requires-python = ">=3.12"
+authors = [{ name = "Fixture Author", email = "fixture@example.com" }]
+keywords = ["cxbuild", "fixture"]
+classifiers = [
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: C++",
+]
+dependencies = ["loguru>=0.7"]  # installed in the test environment already: no download
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[project.scripts]
+cxb-simple = "cxb_simple.cli:main"
+
+[project.urls]
+Homepage = "https://example.com/cxb_simple"
 
 [tool.setuptools]
 packages = ["cxb_simple"]

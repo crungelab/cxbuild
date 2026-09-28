@@ -11,13 +11,14 @@ what `develop` does); they are uninstalled when the session ends.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 import pytest
 
@@ -29,7 +30,7 @@ TIMEOUT = 600  # seconds; a cold cmake configure + build of both projects is wel
 CXBUILD_ENV = ("CBX_ACTIVITY", "CXBUILD_ROOT", "CXBUILD_VERBOSE", "CXBUILD_LOG_UDP")
 
 
-@dataclass
+@dataclass(repr=False)
 class CxbuildResult:
     returncode: int
     output: str  # stdout and stderr, interleaved
@@ -45,8 +46,8 @@ class CxbuildResult:
     def log(self, name: str = "cxbuild") -> str:
         return (self.state_dir / f"{name}.log").read_text(encoding="utf-8")
 
-    def __str__(self) -> str:  # what pytest shows when an assert on the result fails
-        return f"exit {self.returncode} in {self.root}\n{self.output}"
+    def __repr__(self) -> str:  # pytest shows the repr when an assert on the result fails
+        return f"cxbuild exited {self.returncode} in {self.root}\n--- output ---\n{self.output}"
 
 
 def clean_env() -> dict[str, str]:
@@ -64,6 +65,36 @@ def run_python(code: str, cwd: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
+def query(code: str, cwd: Path) -> Any:
+    """Run code in a fresh interpreter that prints one JSON value, and return it."""
+    proc = run_python(code, cwd)
+    assert proc.returncode == 0, proc.stderr
+    return json.loads(proc.stdout)
+
+
+def copy_solution(dest: Path) -> Path:
+    if shutil.which("cmake") is None:
+        pytest.skip("cmake not found on PATH")
+    root = dest / "solution"
+    shutil.copytree(
+        SOLUTION, root,
+        ignore=shutil.ignore_patterns(
+            "_cxbuild", "build", "dist", "*.egg-info", "__pycache__", "*.so", "*.pyd"
+        ),
+    )
+    return root
+
+
+def run_cxbuild(root: Path, *args: str) -> CxbuildResult:
+    proc = subprocess.run(
+        [sys.executable, "-c", "from cxbuild.cli import cli; cli()", *args],
+        cwd=root, env=clean_env(),
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+        timeout=TIMEOUT,
+    )
+    return CxbuildResult(proc.returncode, proc.stdout, root)
+
+
 @pytest.fixture(scope="session", autouse=True)
 def uninstall_fixture_projects():
     yield
@@ -75,16 +106,7 @@ def uninstall_fixture_projects():
 
 @pytest.fixture
 def solution(tmp_path: Path) -> Path:
-    if shutil.which("cmake") is None:
-        pytest.skip("cmake not found on PATH")
-    root = tmp_path / "solution"
-    shutil.copytree(
-        SOLUTION, root,
-        ignore=shutil.ignore_patterns(
-            "_cxbuild", "build", "dist", "*.egg-info", "__pycache__", "*.so", "*.pyd"
-        ),
-    )
-    return root
+    return copy_solution(tmp_path)
 
 
 @pytest.fixture
@@ -92,12 +114,14 @@ def cxbuild(solution: Path) -> Callable[..., CxbuildResult]:
     """Run the cxbuild CLI in the solution copy: cxbuild("develop", "cxb_second")."""
 
     def run(*args: str) -> CxbuildResult:
-        proc = subprocess.run(
-            [sys.executable, "-c", "from cxbuild.cli import cli; cli()", *args],
-            cwd=solution, env=clean_env(),
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-            timeout=TIMEOUT,
-        )
-        return CxbuildResult(proc.returncode, proc.stdout, solution)
+        return run_cxbuild(solution, *args)
 
     return run
+
+
+@pytest.fixture(scope="module")
+def developed(tmp_path_factory: pytest.TempPathFactory) -> CxbuildResult:
+    """One `cxbuild develop`, shared by a module's read-only tests."""
+    result = run_cxbuild(copy_solution(tmp_path_factory.mktemp("developed")), "develop")
+    assert result.returncode == 0, result
+    return result
