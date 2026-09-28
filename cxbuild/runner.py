@@ -311,6 +311,9 @@ class Runner:
             if isinstance(e, SystemExit):  # distutils/setuptools report errors this way
                 step.code = e.code if isinstance(e.code, int) and e.code else 1
                 consume(f"{e.code}\n" if e.code not in (None, 0) else "SystemExit\n")
+            elif isinstance(e, CxBuildError):  # a problem in the project, not in cxbuild: the message says it all
+                step.code = 1
+                consume(f"{e}\n")
             else:
                 step.code = 1
                 consume("".join(traceback.format_exception(type(e), e, e.__traceback__)))

@@ -1,3 +1,4 @@
+import shutil
 import site
 import importlib
 from pathlib import Path
@@ -112,6 +113,10 @@ class Solution(ProjectBase):
         logger.info("clean")
         for project in self.projects:
             project.clean()
+        dist_dir = self.path / "dist"
+        if dist_dir.exists():
+            logger.debug(f"removing {dist_dir}")
+            shutil.rmtree(dist_dir)
         """
         if activity.mode == BuildMode.DEBUG:
             build_dir = self.path / '_cxbuild/build'
@@ -139,17 +144,19 @@ class Solution(ProjectBase):
         for project in projects:
             project.develop()
 
-    def build(self):
+    def build(self) -> list[Path]:
+        """cmake once for the solution, then one wheel per project into <solution>/dist."""
         logger.info("build")
         activity = BuildActivity().save()
+        # Fail on a bad pyproject.toml (readme, license files) before a long cmake build, not after.
+        builders = [(p, p.wheel_builder(activity.artifacts_dir)) for p in self.projects]
 
         tool = self.create_tool(activity)
         tool.configure()
         tool.build()
         tool.install()
 
-        for project in self.projects:
-            project.build()
+        return [project.write_wheel(builder, self.path / "dist") for project, builder in builders]
 
     def install(self):
         logger.info("install")

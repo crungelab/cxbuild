@@ -1,5 +1,5 @@
 import sys, os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from loguru import logger
 import setuptools
 from setuptools import Distribution
@@ -10,9 +10,10 @@ from .extension_builder import ExtensionBuilder
 
 from .activity import get_activity, BuildActivity, DevelopActivity
 from .project_base import ProjectBase
-from .build_tool import BuildConfig, BuildTool
+from .metadata import ProjectMetadata
 from .pip_tool import PipConfig, PipTool
 from .runner import CxBuildError, Runner
+from .wheel import WheelBuilder, default_packages
 
 
 class Project(ProjectBase):
@@ -42,9 +43,24 @@ class Project(ProjectBase):
         tool = PipTool(PipConfig(env=os.environ, source_dir=self.path), self.runner)
         tool.install()
 
-    def build(self):
-        tool = BuildTool(BuildConfig(env=os.environ, source_dir=self.path), self.runner)
-        tool.build()
+    def wheel_builder(self, artifacts_dir: Path) -> WheelBuilder:
+        """Everything needed to write this project's wheel, validated now: a bad readme or
+        license glob fails here, before anyone waits for cmake."""
+        config = self.pyproject.tool.cxbuild
+        if config.extension is None:
+            raise CxBuildError(f"{self.path / 'pyproject.toml'}: [tool.cxbuild.extension] is missing")
+        if config.wheel.packages is not None:
+            packages = [PurePosixPath(*name.split(".")) for name in config.wheel.packages]
+        else:
+            packages = default_packages(config.extension.name)
+        metadata = ProjectMetadata.from_project(self.pyproject.project, self.path)
+        return WheelBuilder(metadata, self.path, artifacts_dir, packages, exclude=config.wheel.exclude)
+
+    def write_wheel(self, builder: WheelBuilder, out_dir: Path) -> Path:
+        with self.runner.capture(f"wheel {self.path.name}", f"write {builder.filename}", cwd=self.path):
+            wheel = builder.build(out_dir)
+        self.runner.add_artifact(f"wheel {self.path.name}", wheel)
+        return wheel
 
     def build_wheel(
         self,

@@ -1,7 +1,8 @@
 """What an installed cxbuild wheel contains, checked against the fixture's pyproject.toml.
 
-These pass against the current (setuptools-based) backend and pin down what any
-backend must produce: every package file plus the extension, nothing else from
+Every check runs twice, once per way a wheel gets installed: `cxbuild develop`
+(pip calling the backend) and `cxbuild build` (wheels written to dist/, then
+installed with pip). They pin down what any wheel cxbuild makes must hold: every package file plus the extension, nothing else from
 the source tree, a binary wheel tagged for this interpreter, a working console
 script, and core metadata carrying every [project] field.
 
@@ -20,7 +21,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import SOLUTION, clean_env, query
+from conftest import SOLUTION, clean_env, copy_solution, pip_install, query, run_cxbuild
 
 pytestmark = pytest.mark.pipeline
 
@@ -45,8 +46,8 @@ print(json.dumps({{
 """
 
 
-def inspect(distribution: str, developed) -> dict:
-    return query(INSPECT.format(name=distribution), cwd=developed.root.parent)
+def inspect(distribution: str, installation) -> dict:
+    return query(INSPECT.format(name=distribution), cwd=installation.root.parent)
 
 
 def normalize_name(name: str) -> str:
@@ -68,9 +69,21 @@ def is_expected_file(path: str) -> bool:
     )
 
 
+@pytest.fixture(scope="module", params=["develop", "build"])
+def installation(request, tmp_path_factory):
+    """The fixture solution, installed one way or the other. pytest runs every test for
+    one route before switching to the next, so each route installs exactly once."""
+    root = copy_solution(tmp_path_factory.mktemp(request.param))
+    result = run_cxbuild(root, request.param)
+    assert result.returncode == 0, result
+    if request.param == "build":
+        pip_install(*sorted((root / "dist").glob("*.whl")))
+    return result
+
+
 @pytest.fixture(scope="module")
-def installed(developed):
-    return inspect(PROJECT, developed)
+def installed(installation):
+    return inspect(PROJECT, installation)
 
 
 def test_python_modules_are_installed(installed):
@@ -133,7 +146,7 @@ def test_readme_is_the_long_description(installed):
     assert README.strip() in m.get("description", "")
 
 
-def test_console_script_is_installed_and_runs(installed, developed):
+def test_console_script_is_installed_and_runs(installed, installation):
     (name, target), = PYPROJECT["scripts"].items()
     assert ["console_scripts", name, target] in installed["entry_points"]
 
@@ -142,7 +155,7 @@ def test_console_script_is_installed_and_runs(installed, developed):
     assert len(scripts) == 1, installed["files"]
     script = scripts[0]
     proc = subprocess.run(
-        [script], cwd=developed.root.parent, env=clean_env(),
+        [script], cwd=installation.root.parent, env=clean_env(),
         capture_output=True, text=True, timeout=60,
     )
     assert proc.returncode == 0, proc.stderr
@@ -157,8 +170,8 @@ NAMESPACE_PORTIONS = {"cxbns-second": "second", "cxbns-third": "third"}
 
 
 @pytest.mark.parametrize("distribution, portion", NAMESPACE_PORTIONS.items())
-def test_namespace_portion_ships_only_its_own_package(distribution, portion, developed):
-    files = inspect(distribution, developed)["files"]
+def test_namespace_portion_ships_only_its_own_package(distribution, portion, installation):
+    files = inspect(distribution, installation)["files"]
     # An __init__.py here would turn the namespace into an ordinary package: every
     # portion would install the same file, and uninstalling one would break the rest.
     assert "cxbns/__init__.py" not in files, files
@@ -166,10 +179,10 @@ def test_namespace_portion_ships_only_its_own_package(distribution, portion, dev
     assert package and all(f.startswith(f"cxbns/{portion}/") for f in package), package
 
 
-def test_namespace_portions_import_together(developed):
+def test_namespace_portions_import_together(installation):
     result = query(
         "import json, cxbns, cxbns.second, cxbns.third; "
         "print(json.dumps([getattr(cxbns, '__file__', None), cxbns.second.greet('ns'), cxbns.third.triple(3)]))",
-        cwd=developed.root.parent,
+        cwd=installation.root.parent,
     )
     assert result == [None, "hello, ns", 9]  # __file__ None: cxbns is a namespace, not a module

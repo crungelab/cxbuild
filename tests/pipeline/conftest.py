@@ -98,6 +98,15 @@ def run_cxbuild(root: Path, *args: str) -> CxbuildResult:
     return CxbuildResult(proc.returncode, proc.stdout, root)
 
 
+def pip_install(*wheels: Path) -> None:
+    """Install built wheels into the test environment, replacing any earlier install."""
+    proc = subprocess.run(
+        [sys.executable, "-m", "pip", "install", "--no-deps", "--force-reinstall", *map(str, wheels)],
+        capture_output=True, text=True, env=clean_env(), timeout=TIMEOUT,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
 @pytest.fixture(scope="session", autouse=True)
 def uninstall_fixture_projects():
     yield
