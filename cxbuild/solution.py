@@ -19,6 +19,8 @@ from .activity import (
 )
 from .project_base import ProjectBase
 from .project import Project
+from .wheel import WheelBuilder
+from .lock import BuildLock
 from .runner import CxBuildError, Runner
 
 
@@ -66,6 +68,18 @@ class Solution(ProjectBase):
             if path == project.path or project.path in path.parents:
                 return project
         return None
+
+    def build_lock(self) -> BuildLock:
+        """Held for any cmake run in the shared build directory, and while reading what it
+        installed: another cxbuild, or a hatch workspace install, may be building too."""
+        return BuildLock(self.build_root / "build.lock", self.runner)
+
+    def compile(self, activity: Activity) -> None:
+        """configure, build and install the whole solution. Call under the build lock."""
+        tool = self.create_tool(activity)
+        tool.configure()
+        tool.build()
+        tool.install()
 
     def activity(self, kind: type[Activity]) -> Activity:
         """A saved activity rooted at the solution, wherever cxbuild was started from."""
@@ -165,8 +179,8 @@ class Solution(ProjectBase):
         logger.info("configure")
         activity = self.activity(ConfigureActivity)
         self.runner.expect(1)
-        tool = self.create_tool(activity)
-        tool.configure()
+        with self.build_lock():
+            self.create_tool(activity).configure()
 
     def develop(self, project_name: str = None):
         logger.info("develop")
@@ -175,13 +189,24 @@ class Solution(ProjectBase):
         builders = [(p, p.wheel_builder(activity.artifacts_dir)) for p in self.select_projects(project_name)]
         self.runner.expect(3 + len(builders))  # configure, build, install, then an install per project
 
-        tool = self.create_tool(activity)
-        tool.configure()
-        tool.build()
-        tool.install()
+        with self.build_lock():
+            self.compile(activity)
+            for project, builder in builders:
+                project.stage(builder)
+        # Outside the lock: the hooks these installs run find the build done (the activity says so).
+        for project, _ in builders:
+            project.install_editable()
 
-        for project, builder in builders:
-            project.develop(builder)
+    def prepare_editable(self, project: Project) -> "WheelBuilder":
+        """What the backend does when a workspace installs a project with no cxbuild command
+        around it: build the solution and stage the project's module, under the build lock.
+        uv builds workspace members concurrently; the first compiles, the rest find it done."""
+        activity = self.activity(DevelopActivity)
+        builder = project.wheel_builder(activity.artifacts_dir)
+        with self.build_lock():
+            self.compile(activity)
+            project.stage(builder)
+        return builder
 
     def build(self) -> list[Path]:
         """cmake once for the solution, then one wheel per project into <solution>/dist."""
@@ -191,16 +216,13 @@ class Solution(ProjectBase):
         builders = [(p, p.wheel_builder(activity.artifacts_dir)) for p in self.projects]
         self.runner.expect(3 + len(builders))  # configure, build, install, then a wheel per project
 
-        tool = self.create_tool(activity)
-        tool.configure()
-        tool.build()
-        tool.install()
-
-        return [project.write_wheel(builder, self.path / "dist") for project, builder in builders]
+        with self.build_lock():  # the wheels read the artifacts: nobody may reinstall them meanwhile
+            self.compile(activity)
+            return [project.write_wheel(builder, self.path / "dist") for project, builder in builders]
 
     def install(self):
         logger.info("install")
         activity = self.activity(InstallActivity)
         self.runner.expect(1)
-        tool = self.create_tool(activity)
-        tool.install()
+        with self.build_lock():
+            self.create_tool(activity).install()

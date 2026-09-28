@@ -57,15 +57,20 @@ class Project(ProjectBase):
         self.runner.add_artifact(f"{kind} {self.path.name}", wheel)
         return wheel
 
-    def develop(self, builder: WheelBuilder):
-        """Editable install: put the built module where Python will import it from, the
-        source tree, then let pip install the editable wheel (metadata plus a .pth)."""
+    def stage(self, builder: WheelBuilder):
+        """Put the built module where an editable install imports it from: the source tree.
+        Call under the build lock, so no other process is reinstalling the artifacts meanwhile."""
         for package in builder.packages:
             built = Path(builder.artifacts_dir) / package
             if not built.is_dir():
                 raise CxBuildError(f"no build output in {built}: has cmake built and installed this project?")
             logger.debug(f"copying {built} -> {self.path / package}")
             copy_directory_contents(built, self.path / package)
+
+    def install_editable(self):
+        """Install this project editable into the running environment (uv or pip), through
+        cxbuild's backend. Call outside the build lock: the hook the installer runs doesn't
+        take it (the activity says the build is done), but nothing here needs the lock either."""
         tool = PipTool(PipConfig(env=dict(os.environ), source_dir=self.path, name=self.name), self.runner)
         tool.install()
 

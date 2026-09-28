@@ -2,9 +2,17 @@
 PEP 517 build hooks
 
 cxbuild builds wheels from what a cxbuild command has just built with cmake: the
-CLI saves an activity and points CBX_ACTIVITY at it, then runs pip, which calls
-these hooks. Without an activity, the wheel hooks fail with a message saying to
-run cxbuild; sdists are not supported at all. setuptools is not involved.
+CLI saves an activity and points CBX_ACTIVITY at it, then runs pip or uv, which
+call these hooks. Two cases have no activity:
+
+* build_editable for a project inside a cxbuild solution, as when a hatch
+  workspace installs its members: the hook builds the solution itself (under
+  the build lock, since uv builds members concurrently), stages the module and
+  writes the editable wheel. See Solution.prepare_editable.
+* build_wheel: refused with a message saying to run `cxbuild build`. Release
+  wheels come from the CLI, which builds the whole solution once.
+
+sdists are not supported at all. setuptools is not involved.
 
 Every hook runs in a fresh process (pip, build and hatch all call hooks through
 pyproject_hooks), so every hook is a logging entry point. The light hooks
@@ -37,6 +45,7 @@ from .metadata import ProjectMetadata
 from .project import Project
 from .pyproject import PyProject
 from .runner import DEFAULT_NAME, CxBuildError, Runner
+from .solution import Solution, find_solution_root
 
 __all__ = [
     "_supported_features",
@@ -90,6 +99,26 @@ def _build(hook: str, wheel_directory: str, config_settings: Mapping[str, Any] |
         return project.backend_wheel(Path(wheel_directory), editable=editable).name
 
 
+def _standalone_editable(wheel_directory: str, config_settings: Mapping[str, Any] | None) -> str:
+    """build_editable with no cxbuild command around it: build the solution, stage this
+    project's module, write the editable wheel. The record goes where `cxbuild develop`'s
+    would: the solution's _cxbuild/, as <project>.log and <project>_report.md."""
+    project_dir = Path.cwd().resolve()
+    root = find_solution_root(project_dir)  # outside a solution: a CxBuildError that says so
+    name = project_dir.name
+    configure_logging(root, name=name)
+    logger.debug("hook build_editable (standalone): project {}, solution {}", project_dir, root)
+    verbose = _flag(config_settings, "verbose") or _flag(os.environ, "CXBUILD_VERBOSE")
+
+    with Runner(root, "build_editable", verbose=verbose, name=name) as runner:
+        solution = Solution(root, runner)
+        project = solution.project_containing(project_dir)
+        if project is None or project.path != project_dir:
+            raise CxBuildError(f"{project_dir} is not one of the projects of the solution at {root}")
+        builder = solution.prepare_editable(project)
+        return project.write_wheel(builder, Path(wheel_directory), editable=True).name
+
+
 def _prepare_metadata(metadata_directory: str) -> str:
     """Write <name>-<version>.dist-info with METADATA (and entry_points.txt): what pip reads
     to resolve dependencies. Only pyproject.toml is needed; nothing is built."""
@@ -131,7 +160,9 @@ def build_editable(
     config_settings: dict[str, list[str] | str] | None = None,
     metadata_directory: str | None = None,
 ) -> str:
-    return _build("build_editable", wheel_directory, config_settings, editable=True)
+    if _under_cxbuild():  # `cxbuild develop` has already built and staged: just the wheel
+        return _build("build_editable", wheel_directory, config_settings, editable=True)
+    return _standalone_editable(wheel_directory, config_settings)
 
 
 def get_requires_for_build_sdist(

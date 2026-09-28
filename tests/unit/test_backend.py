@@ -64,10 +64,15 @@ def test_sdists_are_refused(project, tmp_path):
     assert not (tmp_path / "sdist").exists()
 
 
-@pytest.mark.parametrize("hook", ["build_wheel", "build_editable"])
-def test_wheel_hooks_need_a_cxbuild_run(project, tmp_path, hook):
-    # Standalone `pip wheel` / `pip install -e`: nothing was built, so say how to build it.
+def test_build_wheel_needs_a_cxbuild_run(project, tmp_path):
+    # Standalone `pip wheel`: release wheels come from `cxbuild build`, which builds the solution once.
     with pytest.raises(CxBuildError, match="run `cxbuild develop`"):
-        getattr(backend, hook)(str(tmp_path / "wheels"))
+        backend.build_wheel(str(tmp_path / "wheels"))
     report = (project / "_cxbuild" / "cxbuild_report.md").read_text()
-    assert report.startswith(f"# cxbuild {hook} — ❌ failed")  # and the report says why
+    assert report.startswith("# cxbuild build_wheel — ❌ failed")  # and the report says why
+
+
+def test_standalone_editable_outside_a_solution_says_so(project, tmp_path):
+    # A workspace install builds standalone, but only a project inside a cxbuild solution.
+    with pytest.raises(CxBuildError, match="not inside a cxbuild solution"):
+        backend.build_editable(str(tmp_path / "wheels"))
