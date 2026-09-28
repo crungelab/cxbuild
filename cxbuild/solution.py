@@ -128,6 +128,7 @@ class Solution(ProjectBase):
     def configure(self):
         logger.info("configure")
         activity = ConfigureActivity().save()
+        self.runner.expect(1)
         tool = self.create_tool(activity)
         tool.configure()
 
@@ -136,6 +137,7 @@ class Solution(ProjectBase):
         activity = DevelopActivity().save()
         # Fail on an unknown project or a bad pyproject.toml before a long cmake build, not after.
         builders = [(p, p.wheel_builder(activity.artifacts_dir)) for p in self.select_projects(project_name)]
+        self.runner.expect(3 + len(builders))  # configure, build, install, then pip per project
 
         tool = self.create_tool(activity)
         tool.configure()
@@ -151,6 +153,7 @@ class Solution(ProjectBase):
         activity = BuildActivity().save()
         # Fail on a bad pyproject.toml (readme, license files) before a long cmake build, not after.
         builders = [(p, p.wheel_builder(activity.artifacts_dir)) for p in self.projects]
+        self.runner.expect(3 + len(builders))  # configure, build, install, then a wheel per project
 
         tool = self.create_tool(activity)
         tool.configure()
@@ -162,5 +165,6 @@ class Solution(ProjectBase):
     def install(self):
         logger.info("install")
         activity = InstallActivity().save()
+        self.runner.expect(1)
         tool = self.create_tool(activity)
         tool.install()

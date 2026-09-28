@@ -14,7 +14,9 @@ files in <root>/_cxbuild/ are the record of a build:
 * <name>.log: loguru at DEBUG, including every line of command output,
   tagged with its step. Configured by logsetup.configure_logging().
 
-The terminal gets a line per command and a warning count. On failure it
+The terminal gets a line per command and a warning count, and on a terminal
+live progress: a bar for the running step (a real one for Ninja and Make
+builds, which count their own progress) and one for the whole command. On failure it
 also gets the tail of that command's output. With verbose=True, output is
 also streamed live.
 
@@ -44,6 +46,16 @@ from typing import Callable, Iterator, Mapping
 
 from loguru import logger
 from rich.panel import Panel
+from rich.progress import (
+    BarColumn,
+    Progress,
+    SpinnerColumn,
+    TaskID,
+    TaskProgressColumn,
+    TextColumn,
+    TimeElapsedColumn,
+)
+from rich.table import Column
 from rich.text import Text
 
 from .console import console
@@ -133,6 +145,7 @@ class Step:
     elapsed: float = 0.0
     diagnostics: set[Diagnostic] = field(default_factory=set)
     tool_warnings: int = 0  # loguru WARNING+ lines from tools cmake ran
+    task: TaskID | None = field(default=None, repr=False)  # its live progress bar, if any
 
     @property
     def ok(self) -> bool:
@@ -187,6 +200,21 @@ class _LineWriter(io.TextIOBase):
         super().close()
 
 
+# Build tools report their own progress: Ninja "[123/1456] ...", Make "[ 45%] ...".
+# MSBuild reports none, so its step shows a spinner and the elapsed time only.
+NINJA_PROGRESS = re.compile(r"^\[(\d+)/(\d+)\]")
+MAKE_PROGRESS = re.compile(r"^\[\s*(\d+)%\]")
+
+
+def parse_progress(line: str) -> tuple[int, int] | None:
+    """(completed, total) from a build tool's progress prefix, or None."""
+    if m := NINJA_PROGRESS.match(line):
+        return int(m[1]), int(m[2])
+    if m := MAKE_PROGRESS.match(line):
+        return int(m[1]), 100
+    return None
+
+
 def fence_for(text: str) -> str:
     """A code fence longer than any backtick run inside `text`."""
     longest = max((len(m) for m in re.findall(r"`+", text)), default=0)
@@ -215,6 +243,8 @@ class Runner:
         self.artifacts: list[tuple[str, Path]] = []
         self.error: BaseException | None = None
         self.terminal = None  # the real stderr while capture() redirects sys.stderr
+        self.progress: Progress | None = None  # live bars, on a terminal only
+        self.overall: TaskID | None = None
 
     # --- lifecycle -------------------------------------------------------
 
@@ -224,9 +254,29 @@ class Runner:
         self.start_time = time.monotonic()
         self.file = open(self.path, "w", buffering=1, encoding="utf-8")  # line-buffered: readable mid-run
         self.file.write(f"# cxbuild {self.label} (running)\n\n_Started {self.started:%Y-%m-%d %H:%M:%S}_\n")
+        # Live progress only on a terminal: inside pip (the backend) output is captured,
+        # and --verbose streams the output itself, which a live display would tear.
+        if console.is_terminal and not self.verbose:
+            self.progress = Progress(
+                SpinnerColumn(),
+                TextColumn("[bold cyan]{task.description}", table_column=Column(no_wrap=True)),
+                BarColumn(bar_width=30),
+                TaskProgressColumn(),
+                TimeElapsedColumn(),
+                TextColumn("[dim]{task.fields[line]}", table_column=Column(ratio=1, no_wrap=True, overflow="ellipsis")),
+                console=console,
+                expand=True,
+                transient=True,  # the bars vanish at the end; the step lines above them stay
+                redirect_stdout=False,  # capture() redirects the streams itself
+                redirect_stderr=False,
+            )
+            self.progress.start()
+            self.overall = self.progress.add_task(f"cxbuild {self.label}", total=None, line="")
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
+        if self.progress is not None:
+            self.progress.stop()
         self.file.close()
         if exc is not None and not isinstance(exc, BuildStepError):
             # Not a failed command: a bug or bad config. The report is where it gets seen.
@@ -236,6 +286,11 @@ class Runner:
             self.path.write_text(self.render(), encoding="utf-8")
         except Exception:
             logger.exception("could not write {}", self.path)  # never mask the original error
+
+    def expect(self, steps: int) -> None:
+        """How many steps this run will take, so the overall bar can show how far along it is."""
+        if self.progress is not None and self.overall is not None:
+            self.progress.update(self.overall, total=steps)
 
     def add_artifact(self, label: str, path: Path) -> None:
         self.artifacts.append((label, Path(path)))
@@ -293,8 +348,9 @@ class Runner:
         shown = f"(in process) {description or label}"
         step, consume, tail, start = self._start([label], shown, cwd, label, None)
         writer = _LineWriter(consume)
-        outer = self.terminal
-        self.terminal = console.file = outer or sys.stderr  # nested steps print to the terminal
+        # Nested steps must keep printing where the console prints now, not into the capture.
+        outer = (self.terminal, console._file)  # rich keeps None there to mean "follow sys.stderr"
+        self.terminal = console.file = console.file
         try:
             # contextualize: log records from the work itself are tagged with this step too
             with redirect_stdout(writer), redirect_stderr(writer), logger.contextualize(step=label):
@@ -325,8 +381,7 @@ class Runner:
             self._finish(step, tail, start)
 
     def _restore_terminal(self, outer) -> None:
-        self.terminal = outer
-        console.file = outer  # None: back to following sys.stderr
+        self.terminal, console.file = outer
 
     def _start(
         self, command: list[str], shown: str, cwd: Path, label: str, diag_base: Path | None
@@ -341,6 +396,7 @@ class Runner:
         scanner = DiagnosticScanner(Path(diag_base or cwd))
         tail: deque[str] = deque(maxlen=TAIL_LINES)
         echo = self.terminal or sys.stderr  # never a capture()'s redirected stream
+        task = self.progress.add_task(step.label, total=None, line="") if self.progress else None
 
         def consume(raw: str) -> None:
             line = ANSI.sub("", raw)
@@ -355,13 +411,30 @@ class Runner:
                 step.tool_warnings += 1
             if self.verbose:
                 echo.write(line)
+            if task is not None:
+                self._show(task, line)
 
+        step.task = task
         return step, consume, tail, time.monotonic()
+
+    def _show(self, task: TaskID, line: str) -> None:
+        text = line.strip()
+        if not text:
+            return
+        if (done := parse_progress(text)) is not None:
+            completed, total = done
+            self.progress.update(task, completed=completed, total=total, line=text)
+        else:
+            self.progress.update(task, line=text)
 
     def _finish(
         self, step: Step, tail: deque[str], start: float, *, cause: BaseException | None = None, quiet: bool = False
     ) -> None:
         step.elapsed = time.monotonic() - start
+        if step.task is not None:
+            self.progress.remove_task(step.task)
+            if step.ok and self.overall is not None:
+                self.progress.advance(self.overall)
         self.file.write(f"{LIVE_FENCE}\n\n_exit {step.code} · {step.elapsed:.1f}s_\n")
         logger.bind(step=step.label).info(
             "exit {} in {:.1f}s, {} warning(s), {} error(s)", step.code, step.elapsed, step.warnings, step.errors
