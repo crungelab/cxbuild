@@ -45,6 +45,7 @@ from pathlib import Path
 from typing import Callable, Iterator, Mapping
 
 from loguru import logger
+from rich.markup import escape
 from rich.panel import Panel
 from rich.progress import (
     BarColumn,
@@ -286,6 +287,49 @@ class Runner:
             self.path.write_text(self.render(), encoding="utf-8")
         except Exception:
             logger.exception("could not write {}", self.path)  # never mask the original error
+        self._summarize(exc)
+
+    # --- terminal --------------------------------------------------------
+
+    def display(self, command: list[str], shown: str) -> str:
+        """The command as the terminal shows it: the program by name rather than full path."""
+        if len(command) > 1 and os.path.isabs(command[0]):
+            return shlex.join([Path(command[0]).name, *command[1:]])
+        return shown
+
+    def abbreviate(self, text: str) -> str:
+        """Shorter paths for the terminal; the report and log keep every command whole.
+
+        The environment's prefix becomes <env>, the solution root becomes relative,
+        and the home directory becomes ~, in that order: the environment and the
+        solution usually live under home.
+        """
+        replacements = []
+        if sys.prefix != sys.base_prefix:  # in a virtual environment
+            replacements.append((str(Path(sys.prefix).resolve()), "<env>"))
+        root = str(self.root)
+        replacements += [(root + os.sep, ""), (root, "."), (str(Path.home()), "~")]
+        for old, new in replacements:
+            text = text.replace(old, new)
+        return text
+
+    def _link(self, path: Path) -> str:
+        """A path the terminal can open: rich emits it as a hyperlink where supported."""
+        return f"[link={path.resolve().as_uri()}]{escape(self.where(path))}[/link]"
+
+    def _summarize(self, exc: BaseException | None) -> None:
+        records = [p for p in (self.path, self.log_path) if p.exists()]
+        where = " · ".join(f"{'report' if p == self.path else 'log'}: {self._link(p)}" for p in records)
+        if exc is None:
+            total = time.monotonic() - self.start_time
+            steps = f"{len(self.steps)} step{'' if len(self.steps) == 1 else 's'}"
+            warnings = sum(s.warnings for s in self.steps)
+            note = f" · [yellow]{plural(warnings, 'warning')}[/yellow]" if warnings else ""
+            console.print(f"👍 [bold green]cxbuild {escape(self.label)} finished[/] in {total:.1f}s · {steps}{note}")
+        elif isinstance(exc, BuildStepError):
+            return  # its panel already names the report and the log
+        if where:
+            console.print(f"   {where}")
 
     def expect(self, steps: int) -> None:
         """How many steps this run will take, so the overall bar can show how far along it is."""
@@ -390,7 +434,9 @@ class Runner:
         self.steps.append(step)
         out = logger.bind(step=step.label)
         out.info("$ {}  (cwd {})", shown, cwd)
-        console.print(f"[bold cyan]{step.label}[/] {shown}  [dim]{cwd}[/]")
+        where = self.where(cwd)
+        location = "" if where == "." else f"  [dim]({escape(where)})[/]"
+        console.print(f"[bold cyan]{escape(step.label)}[/] {escape(self.abbreviate(self.display(command, shown)))}{location}")
         self.file.write(f"\n## {step.label} — {self.where(cwd)}\n\n`$ {shown}`\n\n{LIVE_FENCE}text\n")
 
         scanner = DiagnosticScanner(Path(diag_base or cwd))
@@ -445,7 +491,7 @@ class Runner:
             if not self.verbose:
                 console.print(Panel(Text("".join(tail)), title=f"last {len(tail)} lines of {step.label}"))
             error = BuildStepError(step, self.path, self.log_path)
-            console.print(Panel(f"[red]{error}[/]", title="cxbuild error"))
+            console.print(Panel(f"[red]{escape(str(error))}[/]", title="cxbuild error"))
             raise error from cause
 
         note = f", [yellow]{plural(step.warnings, 'warning')}[/yellow] in {self.path.name}" if step.warnings else ""
