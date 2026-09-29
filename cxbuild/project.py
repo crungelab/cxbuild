@@ -1,3 +1,5 @@
+import hashlib
+import json
 import os
 import shutil
 from pathlib import Path, PurePosixPath
@@ -5,7 +7,6 @@ from pathlib import Path, PurePosixPath
 from loguru import logger
 
 from .activity import get_activity
-from .copyutils import copy_directory_contents
 from .metadata import ProjectMetadata
 from .pip_tool import PipConfig, PipTool
 from .project_base import ProjectBase
@@ -59,13 +60,42 @@ class Project(ProjectBase):
 
     def stage(self, builder: WheelBuilder):
         """Put the built module where an editable install imports it from: the source tree.
-        Call under the build lock, so no other process is reinstalling the artifacts meanwhile."""
+        Call under the build lock, so no other process is reinstalling the artifacts meanwhile.
+
+        What was staged is recorded in _cxbuild/staged/<project>.json, with each file's hash.
+        Files an earlier stage put there that this build no longer produces are removed, but
+        only if unchanged since: a file someone edited or replaced is left alone, with a warning.
+        """
+        record = Path(builder.artifacts_dir).parent / "staged" / f"{self.path.name}.json"
+        previous = _read_staged(record)
+
+        staged: dict[str, str] = {}
         for package in builder.packages:
             built = Path(builder.artifacts_dir) / package
             if not built.is_dir():
                 raise CxBuildError(f"no build output in {built}: has cmake built and installed this project?")
-            logger.debug(f"copying {built} -> {self.path / package}")
-            copy_directory_contents(built, self.path / package)
+            for source in sorted(p for p in built.rglob("*") if p.is_file()):
+                relative = (PurePosixPath(package) / source.relative_to(built).as_posix()).as_posix()
+                target = self.path / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, target)
+                staged[relative] = _sha256(target)
+            logger.debug(f"staged {built} -> {self.path / package}")
+
+        for relative, digest in previous.items():
+            if relative in staged:
+                continue
+            leftover = self.path / relative
+            if not leftover.is_file():
+                continue
+            if _sha256(leftover) != digest:
+                logger.warning(f"{leftover}: staged by an earlier build and changed since; leaving it in place")
+                continue
+            leftover.unlink()
+            logger.info(f"removed {leftover}: staged by an earlier build, no longer built")
+
+        record.parent.mkdir(parents=True, exist_ok=True)
+        record.write_text(json.dumps({"project": str(self.path), "files": staged}, indent=2) + "\n")
 
     def install_editable(self):
         """Install this project editable into the running environment (uv or pip), through
@@ -83,3 +113,15 @@ class Project(ProjectBase):
     def write_requirements(self, requirements):
         with open(self.path / 'requirements.txt', 'w') as f:
             f.write('\n'.join(requirements))
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _read_staged(record: Path) -> dict[str, str]:
+    """{path relative to the project: sha256} from an earlier stage; empty if none or unreadable."""
+    try:
+        return dict(json.loads(record.read_text()).get("files", {}))
+    except (OSError, ValueError, AttributeError):
+        return {}

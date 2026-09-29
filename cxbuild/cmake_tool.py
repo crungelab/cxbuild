@@ -30,6 +30,11 @@ class CMakeConfig:
     env: dict[str, str] = dataclasses.field(init=False, default_factory=os.environ.copy)
     single_config: bool = not sys.platform.startswith("win32")
 
+    @property
+    def install_prefix(self) -> Path:
+        """CMAKE_INSTALL_PREFIX: where `cmake --install` puts the build's output."""
+        return self.install_dir or self.source_dir / "_cxbuild" / "artifacts"
+
     def __post_init__(self) -> None:
         self.init_cache_file = self.build_dir / "CMakeInit.txt"
 
@@ -62,7 +67,7 @@ class CMakeTool(Tool):
                 configure_args += [f"-DCMAKE_MAKE_PROGRAM={shutil.which('ninja')}"]
 
         # CMake configure arguments
-        cmake_install_prefix = self.config.install_dir or self.config.source_dir / '_cxbuild/artifacts'
+        cmake_install_prefix = self.config.install_prefix
 
         cmake_prefix_path = join_posix_paths(self.config.prefix_dirs)
         logger.debug(f'cmake_prefix_path: {cmake_prefix_path}')
@@ -91,6 +96,23 @@ class CMakeTool(Tool):
         self.run(command, cwd=self.config.source_dir, label="build", env=self.config.env, diag_base=self.config.build_dir)
 
     def install(self):
+        self.clear_install_prefix()
         # Multi-config generators (Visual Studio) install Release unless told otherwise.
         command = ["cmake", "--install", self.config.build_dir, "--config", self.config.build_type]
         self.run(command, cwd=self.config.source_dir, label="install", env=self.config.env)
+
+    def clear_install_prefix(self) -> None:
+        """Empty the install prefix, so it holds exactly what this build installs.
+
+        `cmake --install` adds and overwrites but never removes: without this, a module
+        from an older build (another Python version, a renamed target) stays in the
+        artifacts, and is staged into the source tree and packaged into wheels.
+        Installing is only copying from the build tree, so starting clean costs nothing.
+        """
+        prefix = Path(self.config.install_prefix).resolve()
+        if not prefix.exists():
+            return
+        if prefix.parent.name != "_cxbuild":  # never wipe a directory cxbuild doesn't own
+            raise CMakeConfigError(f"refusing to clear install prefix {prefix}: not inside a _cxbuild directory")
+        logger.debug(f"clearing install prefix {prefix}")
+        shutil.rmtree(prefix)
