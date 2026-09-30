@@ -325,7 +325,15 @@ class Runner:
             steps = f"{len(self.steps)} step{'' if len(self.steps) == 1 else 's'}"
             warnings = sum(s.warnings for s in self.steps)
             note = f" · [yellow]{plural(warnings, 'warning')}[/yellow]" if warnings else ""
-            console.print(f"👍 [bold green]cxbuild {escape(self.label)} finished[/] in {total:.1f}s · {steps}{note}")
+            failed = [s for s in self.steps if not s.ok]  # tolerated, e.g. by an editable install
+            if failed:
+                console.print(
+                    f"⚠️  [bold yellow]cxbuild {escape(self.label)} finished, but "
+                    f"{plural(len(failed), 'step')} failed[/] ({escape(', '.join(s.label for s in failed))})"
+                    f" in {total:.1f}s{note}"
+                )
+            else:
+                console.print(f"👍 [bold green]cxbuild {escape(self.label)} finished[/] in {total:.1f}s · {steps}{note}")
         elif isinstance(exc, BuildStepError):
             return  # its panel already names the report and the log
         if where:

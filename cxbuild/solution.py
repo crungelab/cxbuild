@@ -21,7 +21,7 @@ from .project_base import ProjectBase
 from .project import Project
 from .wheel import WheelBuilder
 from .lock import BuildLock
-from .runner import CxBuildError, Runner
+from .runner import BuildStepError, CxBuildError, Runner
 
 
 def is_glob(s):
@@ -200,12 +200,29 @@ class Solution(ProjectBase):
     def prepare_editable(self, project: Project) -> "WheelBuilder":
         """What the backend does when a workspace installs a project with no cxbuild command
         around it: build the solution and stage the project's module, under the build lock.
-        uv builds workspace members concurrently; the first compiles, the rest find it done."""
+        uv builds workspace members concurrently; the first compiles, the rest find it done.
+
+        Tolerant, unlike `cxbuild develop`: this build runs inside environment syncs
+        (`hatch shell`), and a C++ error must not lock you out of the environment you'd
+        fix it from. A failed compile is logged and recorded in the report, the last good
+        module (if any) is staged, and the editable install goes ahead. Metadata errors
+        stay fatal: an install from wrong metadata would be incorrect, not just incomplete.
+        """
         activity = self.activity(DevelopActivity)
         builder = project.wheel_builder(activity.artifacts_dir)
         with self.build_lock():
-            self.compile(activity)
-            project.stage(builder)
+            try:
+                self.compile(activity)
+            except BuildStepError as e:
+                logger.warning(
+                    f"{project.name}: {e.step.label} failed, so its module wasn't rebuilt; the editable "
+                    f"install goes ahead anyway. Fix the build, then run `cxbuild develop` "
+                    f"(details: {self.runner.path})"
+                )
+            try:
+                project.stage(builder)
+            except CxBuildError as e:
+                logger.warning(f"{project.name}: nothing staged, so importing its module will fail until it builds ({e})")
         return builder
 
     def build(self) -> list[Path]:

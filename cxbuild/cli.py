@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
+from functools import wraps
 from pathlib import Path
-from typing import Iterator
 
 import click
 from click import Context
@@ -16,7 +17,7 @@ from .solution import find_solution_root
 
 
 @contextmanager
-def session(ctx: Context, label: str) -> Iterator[CxBuild]:
+def session(ctx: Context, label: str) -> Generator[CxBuild, None, None]:
     """Log and report one CLI command. The only place cxbuild turns errors into an exit code."""
     start = Path.cwd()
     try:
@@ -24,8 +25,10 @@ def session(ctx: Context, label: str) -> Iterator[CxBuild]:
     except CxBuildError as e:
         console.print(f"[red]cxbuild: {e}[/]")
         ctx.exit(1)
+
     os.environ["CXBUILD_ROOT"] = str(root)  # hooks run by pip put their reports beside ours
     configure_logging(root)
+
     try:
         with Runner(root, label, verbose=ctx.obj["verbose"]) as runner:
             yield CxBuild(runner, root, start)
@@ -36,50 +39,62 @@ def session(ctx: Context, label: str) -> Iterator[CxBuild]:
     # Anything else is a bug: it propagates with its traceback, which the report also has.
 
 
-@click.group(invoke_without_command=True)
+@click.group(invoke_without_command=True, context_settings={"help_option_names": ["-h", "--help"]})
 @click.option("-v", "--verbose", is_flag=True, help="Stream command output to the terminal.")
 @click.pass_context
-def cli(ctx: Context, verbose: bool):
-    ctx.ensure_object(dict)
-    ctx.obj["verbose"] = verbose
+def cli(ctx: Context, verbose: bool) -> None:
+    """Build the cmake projects of a cxbuild solution. With no command, runs develop."""
+    ctx.obj = {"verbose": verbose}
     if verbose:
         os.environ["CXBUILD_VERBOSE"] = "1"  # inherited by the hooks when we run pip
     if ctx.invoked_subcommand is None:
-        ctx.invoke(build)
+        ctx.invoke(develop)
 
 
-@cli.command()
-@click.pass_context
-def clean(ctx: Context):
-    with session(ctx, "clean") as builder:
-        builder.clean()
+def command(fn: Callable[..., None]) -> click.Command:
+    """Register fn as a cxbuild command that runs inside a session.
+
+    fn takes the CxBuild first, then any click parameters declared beneath @command.
+    The command's name and help text come from fn's name and docstring.
+    """
+
+    @cli.command(name=fn.__name__)
+    @click.pass_context
+    @wraps(fn)  # carries over __doc__ and the click params stacked on fn
+    def wrapper(ctx: Context, **params) -> None:
+        with session(ctx, fn.__name__) as builder:
+            fn(builder, **params)
+
+    return wrapper
 
 
-@cli.command()
-@click.pass_context
-def configure(ctx: Context):
-    with session(ctx, "configure") as builder:
-        builder.configure()
-
-
-@cli.command()
-@click.pass_context
+@command
 @click.argument("project_name", required=False)
-def develop(ctx: Context, project_name: str):
-    with session(ctx, "develop") as builder:
-        builder.develop(project_name)
+def develop(builder: CxBuild, project_name: str | None) -> None:
+    """Build and install editable, copying binaries into the source tree (the default)."""
+    builder.develop(project_name)
 
 
-@cli.command()
-@click.pass_context
-def build(ctx: Context):
-    with session(ctx, "build") as builder:
-        builder.clean()
-        builder.build()
+@command
+def configure(builder: CxBuild) -> None:
+    """Run cmake configure."""
+    builder.configure()
 
 
-@cli.command()
-@click.pass_context
-def install(ctx: Context):
-    with session(ctx, "install") as builder:
-        builder.install()
+@command
+def build(builder: CxBuild) -> None:
+    """Clean, then build wheels."""
+    builder.clean()
+    builder.build()
+
+
+@command
+def install(builder: CxBuild) -> None:
+    """Build and install."""
+    builder.install()
+
+
+@command
+def clean(builder: CxBuild) -> None:
+    """Remove build output."""
+    builder.clean()

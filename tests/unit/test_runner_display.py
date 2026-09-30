@@ -82,3 +82,14 @@ def test_other_errors_still_point_at_the_report(tmp_path, screen):
     text = plain(screen)
     assert "finished" not in text
     assert "report: _cxbuild/cxbuild_report.md" in text
+
+
+def test_a_run_with_a_tolerated_failure_gets_no_thumbs_up(tmp_path, screen):
+    with Runner(tmp_path, "build_editable") as runner:
+        try:
+            runner.run([sys.executable, "-c", "raise SystemExit(2)"], tmp_path, label="build")
+        except BuildStepError:
+            pass  # tolerated, as an editable install does
+    text = plain(screen)
+    assert "👍" not in text
+    assert "⚠️  cxbuild build_editable finished, but 1 step failed (build)" in text

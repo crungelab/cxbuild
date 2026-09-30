@@ -156,3 +156,42 @@ def test_hatch_workspace(solution, tmp_path):
     for project in PROJECTS:  # each member built standalone, the record in the solution's _cxbuild
         assert (solution / "_cxbuild" / f"{project}_report.md").read_text().startswith(
             "# cxbuild build_editable — ✅ passed")
+
+
+# --- a C++ error must not lock you out of the environment ------------------------
+# An editable install runs inside environment syncs (`hatch shell`): if a compile error
+# failed it, you couldn't enter the environment you'd fix the error from. So these
+# installs tolerate a failed compile; `cxbuild develop` stays strict (test_develop.py).
+
+
+def break_second(solution: Path) -> None:
+    source = solution / "pkg" / "second" / "src" / "main.cpp"
+    text = source.read_text()
+    good = 'return PyUnicode_FromFormat("hello, %s", name);'
+    assert good in text
+    source.write_text(text.replace(good, "return undeclared_name;"))
+
+
+def test_a_compile_error_does_not_block_an_editable_install(solution):
+    break_second(solution)
+    finish(start_install(solution, "second"))  # the install itself succeeds
+
+    report = (solution / "_cxbuild" / "second_report.md").read_text()
+    assert report.startswith("# cxbuild build_editable — ❌ failed")  # ...and the report says why
+    assert "| build |" in report and "undeclared_name" in report
+    log = (solution / "_cxbuild" / "second.log").read_text()
+    assert "the editable install goes ahead" in log
+
+    check = run_python("import cxbns.second", cwd=solution.parent)
+    assert check.returncode != 0  # nothing was ever built: importing says so
+    assert "_core" in check.stderr
+
+
+def test_the_last_good_module_survives_a_later_compile_error(solution):
+    finish(start_install(solution, "second"))
+    break_second(solution)
+    finish(start_install(solution, "second"))
+
+    check = run_python("import cxbns.second; print(cxbns.second.greet('still'))", cwd=solution.parent)
+    assert check.returncode == 0, check.stderr
+    assert check.stdout.strip() == "hello, still"  # the previous build's module, still staged
